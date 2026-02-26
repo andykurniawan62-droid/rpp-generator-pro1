@@ -5,9 +5,10 @@ from fpdf import FPDF
 # --- KONFIGURASI API KEY ---
 GEMINI_API_KEY = "AIzaSyB-nk0E9Laiqg5x6rI7m6tNoqWMLSSDn7Q"
 
-# Konfigurasi model Gemini
+# Konfigurasi model Gemini dengan versi terbaru yang lebih stabil
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+# Menggunakan 'gemini-1.5-flash-latest' untuk menghindari error 404
+model = genai.GenerativeModel('gemini-1.5-flash-latest')
 
 # --- FUNGSI GENERATE PDF ---
 class PDF(FPDF):
@@ -20,71 +21,69 @@ def create_pdf(text):
     pdf = PDF()
     pdf.add_page()
     pdf.set_font("Arial", size=11)
-    # Gunakan multi_cell untuk teks panjang agar otomatis pindah baris
-    pdf.multi_cell(0, 10, txt=text)
+    # Membersihkan karakter non-latin1 agar tidak error saat buat PDF
+    clean_text = text.encode('latin-1', 'ignore').decode('latin-1')
+    pdf.multi_cell(0, 10, txt=clean_text)
     return pdf.output(dest='S')
 
 # --- TAMPILAN APLIKASI ---
 st.set_page_config(page_title="AI RPP Generator Pro", page_icon="📝")
 
 st.title("📝 AI RPP Generator Pro")
-st.info("Aplikasi ini akan membuat RPP lengkap berdasarkan materi yang Anda masukkan.")
+st.info("Masukkan detail pembelajaran di bawah ini untuk membuat RPP otomatis.")
 
 with st.container():
     col1, col2 = st.columns(2)
     with col1:
-        mata_pelajaran = st.text_input("Mata Pelajaran", placeholder="Contoh: Biologi")
-        kelas = st.text_input("Kelas/Semester", placeholder="Contoh: XI / Genap")
+        mata_pelajaran = st.text_input("Mata Pelajaran", placeholder="Contoh: Fisika")
+        kelas = st.text_input("Kelas/Semester", placeholder="Contoh: XII / Ganjil")
     with col2:
-        alokasi_waktu = st.text_input("Alokasi Waktu", placeholder="Contoh: 2 JP (2 x 45 Menit)")
-        topik = st.text_input("Topik Utama", placeholder="Contoh: Sistem Pencernaan")
+        alokasi_waktu = st.text_input("Alokasi Waktu", placeholder="Contoh: 2 JP")
+        topik = st.text_input("Topik Utama", placeholder="Contoh: Hukum Newton")
 
-    materi_pokok = st.text_area("Detail Materi / Kompetensi Dasar", 
-                                placeholder="Masukkan poin-poin materi yang ingin dibahas...")
+    materi_pokok = st.text_area("Detail Materi atau Tujuan Khusus", 
+                                placeholder="Tuliskan materi atau KD yang ingin dimasukkan...")
 
 # Tombol Generate
 if st.button("✨ Buat RPP Sekarang"):
     if not mata_pelajaran or not materi_pokok:
-        st.warning("Harap isi Mata Pelajaran dan Detail Materi!")
+        st.warning("Harap isi setidaknya Mata Pelajaran dan Detail Materi!")
     else:
         try:
-            with st.spinner("🤖 AI sedang menyusun RPP terbaik untuk Anda..."):
+            with st.spinner("🤖 Sedang menghubungi AI..."):
                 prompt = f"""
-                Buatlah Rencana Pelaksanaan Pembelajaran (RPP) Kurikulum Merdeka/K13 yang lengkap:
+                Buatlah Rencana Pelaksanaan Pembelajaran (RPP) yang rapi:
                 Mata Pelajaran: {mata_pelajaran}
                 Kelas: {kelas}
                 Alokasi Waktu: {alokasi_waktu}
                 Topik: {topik}
-                Detail Materi: {materi_pokok}
+                Detail: {materi_pokok}
                 
-                Struktur RPP:
-                1. Tujuan Pembelajaran
-                2. Langkah Pembelajaran (Pendahuluan, Inti, Penutup)
-                3. Media & Sumber Belajar
-                4. Jenis Asesmen/Penilaian
-                
-                Tuliskan dalam format yang rapi dan profesional.
+                Format: Identitas, Tujuan, Langkah-langkah (Pendahuluan, Inti, Penutup), dan Penilaian.
                 """
                 
                 response = model.generate_content(prompt)
-                rpp_result = response.text
                 
-                st.success("✅ RPP Selesai!")
-                st.markdown("---")
-                st.markdown(rpp_result)
-                
-                # Opsi Download PDF
-                pdf_bytes = create_pdf(rpp_result.encode('latin-1', 'ignore').decode('latin-1'))
-                
-                st.download_button(
-                    label="📥 Unduh RPP sebagai PDF",
-                    data=pdf_bytes,
-                    file_name=f"RPP_{mata_pelajaran}_{topik}.pdf",
-                    mime="application/pdf"
-                )
+                if response.text:
+                    st.success("✅ RPP Berhasil Dibuat!")
+                    st.markdown("---")
+                    st.markdown(response.text)
+                    
+                    # Generate PDF
+                    pdf_output = create_pdf(response.text)
+                    
+                    st.download_button(
+                        label="📥 Unduh RPP sebagai PDF",
+                        data=pdf_output,
+                        file_name=f"RPP_{mata_pelajaran}.pdf",
+                        mime="application/pdf"
+                    )
+                else:
+                    st.error("AI memberikan jawaban kosong. Coba lagi.")
                 
         except Exception as e:
-            st.error(f"Gagal generate: {e}")
+            st.error(f"Terjadi Kendala: {str(e)}")
+            st.info("Tips: Pastikan koneksi internet stabil dan API Key masih berlaku.")
 
 st.markdown("---")
-st.caption("Powered by Gemini AI • 2026")
+st.caption("AI RPP Generator • 2026")
