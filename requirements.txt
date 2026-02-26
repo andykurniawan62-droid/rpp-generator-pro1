@@ -1,6 +1,5 @@
 streamlit
 google-generativeai
-xhtml2pdf
 python-docx
 beautifulsoup4
 pillow
