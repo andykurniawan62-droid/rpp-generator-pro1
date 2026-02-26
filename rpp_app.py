@@ -16,8 +16,6 @@ st.markdown("""
     }
     [data-testid="stForm"] { background-color: #111111; padding: 30px; border-radius: 15px; border: 1px solid #444444; }
     label, .stMarkdown p { color: #ffffff !important; font-weight: bold; }
-    
-    /* Style Khusus Preview RPP agar Putih Bersih seperti Kertas */
     .preview-box { 
         background-color: #ffffff !important; 
         color: #000000 !important; 
@@ -25,11 +23,9 @@ st.markdown("""
         border-radius: 5px; 
         margin-top: 20px; 
         font-family: 'Arial', sans-serif;
-        line-height: 1.6;
     }
-    .preview-box h1, .preview-box h2, .preview-box h3, .preview-box h4 { color: #000000 !important; border-bottom: 1px solid #eee; padding-bottom: 5px; }
-    .preview-box table { border-collapse: collapse; width: 100%; margin-bottom: 20px; color: #000000 !important; }
-    .preview-box th, .preview-box td { border: 1px solid #000 !important; padding: 10px; text-align: left; vertical-align: top; }
+    .preview-box table { border-collapse: collapse; width: 100%; color: #000000 !important; }
+    .preview-box th, .preview-box td { border: 1px solid #000 !important; padding: 8px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -56,62 +52,49 @@ if not st.session_state.authenticated:
     st.stop()
 
 # ==============================
-# 3. FUNGSI GENERATE (OPTIMAL PROMPT)
+# 3. FUNGSI GENERATE (TRIPLE SHOT)
 # ==============================
-def generate_rpp_final(data):
-    # Menggunakan model 1.5-flash di jalur v1beta (paling update 2026)
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+def generate_rpp_triple_shot(data):
+    # DAFTAR NAMA TEKNIS TERBARU (Sangat Spesifik)
+    model_variants = [
+        "gemini-1.5-flash-latest",   # Varian 1
+        "gemini-1.5-flash-002",      # Varian 2 (Versi Stabil Terbaru)
+        "gemini-1.5-flash"           # Varian Standar
+    ]
     
-    pertemuan_str = "\n".join([f"P{i+1}: Model {p['model']}, Waktu {p['waktu']}" for i, p in enumerate(data['pertemuan'])])
-    
-    prompt_text = f"""
-    Buatlah RPP Kurikulum Merdeka Lengkap.
-    PENTING: Jangan gunakan teks dalam kurung siku seperti [Nama Sekolah]. Gunakan data asli di bawah ini.
-    
-    DATA IDENTITAS:
-    Satuan Pendidikan: {data['sekolah']}
-    Mata Pelajaran: {data['mapel']}
-    Fase/Kelas: {data['fase']}
-    Materi Utama: {data['materi']}
-    Tujuan Pembelajaran: {data['tujuan']}
-    Rincian Pertemuan: {pertemuan_str}
-    
-    STRUKTUR OUTPUT HTML:
-    1. Judul Besar: RENCANA PELAKSANAAN PEMBELAJARAN (RPP).
-    2. Tabel Identitas (Tanpa border luar jika bisa, tapi isi jelas).
-    3. Tujuan Pembelajaran (list).
-    4. Langkah Pembelajaran (Pendahuluan, Inti, Penutup) buat dalam TABEL 3 Kolom: No, Kegiatan, Alokasi Waktu.
-    5. Asesmen, Refleksi Guru, dan Refleksi Murid.
-    6. BAGIAN TANDA TANGAN (Sangat Penting): 
-       Buat tabel 2 kolom tanpa border. 
-       Kolom Kiri: Mengetahui, Kepala Sekolah ({data['sekolah']}), (kosongkan ruang tanda tangan), AHMAD JUNAIDI, S.Pd.
-       Kolom Kanan: (Tempat/Tanggal hari ini), Guru Kelas IV, (kosongkan ruang tanda tangan), ANDY KURNIAWAN, S.Pd.SD.
-    
-    Gunakan Tag HTML murni. Pastikan tabel kegiatan memiliki atribut border="1".
-    """
+    pertemuan_str = "\n".join([f"P{i+1}: {p['model']}, {p['waktu']}" for i, p in enumerate(data['pertemuan'])])
+    prompt_text = f"Buat RPP HTML Rapi. Sekolah: {data['sekolah']}, Mapel: {data['mapel']}, Fase: {data['fase']}, Materi: {data['materi']}, Tujuan: {data['tujuan']}. {pertemuan_str}. Tanda tangan: AHMAD JUNAIDI & ANDY KURNIAWAN."
 
-    payload = {"contents": [{"parts": [{"text": prompt_text}]}]}
-    
-    try:
-        response = requests.post(url, json=payload, timeout=60)
-        res_json = response.json()
-        if 'candidates' in res_json:
-            teks = res_json['candidates'][0]['content']['parts'][0]['text']
-            return teks.replace("```html", "").replace("```", "").strip()
-        else:
-            return f"<p style='color:red;'>Gagal: {res_json.get('error', {}).get('message', 'Cek API Key')}</p>"
-    except Exception as e:
-        return f"<p style='color:red;'>Error: {str(e)}</p>"
+    last_error = ""
+    for model_id in model_variants:
+        # Kita coba jalur v1 (Stable) bukan v1beta agar lebih kuat
+        url = f"https://generativelanguage.googleapis.com/v1/models/{model_id}:generateContent?key={GEMINI_API_KEY}"
+        payload = {"contents": [{"parts": [{"text": prompt_text}]}]}
+        
+        try:
+            response = requests.post(url, json=payload, timeout=45)
+            res_json = response.json()
+            
+            if 'candidates' in res_json:
+                teks = res_json['candidates'][0]['content']['parts'][0]['text']
+                return teks.replace("```html", "").replace("```", "").strip()
+            else:
+                last_error = f"{model_id}: {res_json.get('error', {}).get('message', 'N/A')}"
+                continue # Gagal? Coba varian model berikutnya
+        except:
+            continue
+
+    return f"<div style='color:red; background:white; padding:15px;'><b>SEMUA MODEL DITOLAK:</b> {last_error}</div>"
 
 # ==============================
 # 4. UI UTAMA
 # ==============================
-st.markdown("<div class='main-title'><h1>📄 RPP GENERATOR PRO</h1><p>Versi Sempurna - Andy Kurniawan</p></div>", unsafe_allow_html=True)
+st.markdown("<div class='main-title'><h1>📄 RPP GENERATOR PRO</h1><p>Mode: Triple-Shot Model Accuracy</p></div>", unsafe_allow_html=True)
 
 with st.form("rpp_form"):
     c1, c2 = st.columns(2)
     with c1:
-        sekolah = st.text_input("Nama Sekolah Lengkap", "SDN ...")
+        sekolah = st.text_input("Nama Sekolah", "SDN ...")
         mapel = st.text_input("Mata Pelajaran", "PJOK")
     with c2:
         fase = st.text_input("Fase / Kelas", "B / IV")
@@ -122,24 +105,25 @@ with st.form("rpp_form"):
     
     pertemuan_data = []
     for i in range(int(jml)):
-        st.markdown(f"**Pertemuan {i+1}**")
         col1, col2 = st.columns(2)
-        with col1: m = st.selectbox(f"Model P{i+1}", ["Problem Based Learning", "Project Based Learning", "Discovery Learning"], key=f"m{i}")
-        with col2: w = st.text_input(f"Waktu P{i+1}", "2x35 Menit", key=f"w{i}")
+        with col1: m = st.selectbox(f"Model P{i+1}", ["PBL", "PjBL", "Discovery"], key=f"m{i}")
+        with col2: w = st.text_input(f"Waktu P{i+1}", "2x35m", key=f"w{i}")
         pertemuan_data.append({"model": m, "waktu": w})
     
-    submit = st.form_submit_button("🚀 GENERATE RPP SEMPURNA")
+    submit = st.form_submit_button("🚀 GENERATE RPP")
 
 if submit:
-    with st.spinner("AI sedang merancang RPP profesional untuk Anda..."):
+    with st.spinner("Mencoba 3 varian model Google AI..."):
         data_input = {"sekolah": sekolah, "mapel": mapel, "fase": fase, "materi": materi, "tujuan": tujuan, "pertemuan": pertemuan_data}
-        hasil = generate_rpp_final(data_input)
+        hasil = generate_rpp_triple_shot(data_input)
         
-        st.success("✅ RPP SIAP!")
-        st.markdown("<div class='preview-box'>", unsafe_allow_html=True)
-        st.markdown(hasil, unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-        
-        st.info("💡 TIPS: Tekan Ctrl+P di keyboard Anda untuk mencetak RPP ini langsung ke PDF.")
+        if "SEMUA MODEL DITOLAK" in hasil:
+            st.markdown(hasil, unsafe_allow_html=True)
+            st.warning("PERINGATAN: Jika error 404 berlanjut, berarti API KEY Anda belum divalidasi oleh Google. Mohon buat API KEY baru di Google AI Studio sekarang.")
+        else:
+            st.success("✅ RPP BERHASIL DISUSUN!")
+            st.markdown("<div class='preview-box'>", unsafe_allow_html=True)
+            st.markdown(hasil, unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
 
-st.markdown("<br><p style='text-align: center; color: #555;'>© 2026 RPP Generator Pro | By Andy Kurniawan, S.Pd.SD</p>", unsafe_allow_html=True)
+st.markdown("<br><p style='text-align: center; color: #555;'>© 2026 RPP Generator Pro | Andy Kurniawan, S.Pd.SD</p>", unsafe_allow_html=True)
