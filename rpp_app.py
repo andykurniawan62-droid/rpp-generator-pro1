@@ -1,8 +1,6 @@
 import streamlit as st
 import requests
 import json
-from io import BytesIO
-from docx import Document
 from bs4 import BeautifulSoup
 
 # ==============================
@@ -19,7 +17,9 @@ st.markdown("""
     }
     [data-testid="stForm"] { background-color: #111111; padding: 30px; border-radius: 15px; border: 1px solid #444444; }
     label, .stMarkdown p { color: #ffffff !important; font-weight: bold; }
-    .preview-box { background-color: #ffffff; color: #000000; padding: 40px; border-radius: 10px; margin-top: 20px; border: 1px solid #ccc; }
+    .preview-box { background-color: #ffffff; color: #000000; padding: 40 paradox; border-radius: 10px; margin-top: 20px; border: 1px solid #ccc; overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid black; padding: 8px; text-align: left; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -46,43 +46,48 @@ if not st.session_state.authenticated:
     st.stop()
 
 # ==============================
-# 3. FUNGSI GENERATE (TARGET: GEMINI-PRO)
+# 3. FUNGSI GENERATE (AUTO-TRY MODELS)
 # ==============================
 def generate_rpp_direct(data):
-    # KITA PAKSA MENGGUNAKAN JALUR v1 DENGAN MODEL gemini-pro (VERSI 1.0 STABIL)
-    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={GEMINI_API_KEY}"
+    # Mencoba model yang paling mungkin aktif
+    models_to_try = ["gemini-1.5-flash", "gemini-pro"]
     
-    pertemuan_str = "\n".join([f"P{i+1}: Model {p['model']}, Waktu {p['waktu']}, Tgl {p['tanggal']}" for i, p in enumerate(data['pertemuan'])])
+    pertemuan_str = "\n".join([f"P{i+1}: Model {p['model']}, Waktu {p['waktu']}" for i, p in enumerate(data['pertemuan'])])
     
     prompt_text = f"""
-    Buatlah RPP Kurikulum Merdeka dalam format HTML (tabel border="1").
-    Identitas: Sekolah {data['sekolah']}, Mapel {data['mapel']}, Fase {data['fase']}.
+    Buatlah RPP Kurikulum Merdeka dalam format HTML (gunakan tabel dengan border="1").
+    Sekolah: {data['sekolah']}, Mapel: {data['mapel']}, Fase: {data['fase']}.
     Materi: {data['materi']}. Tujuan: {data['tujuan']}.
     Rincian: {pertemuan_str}.
-    Wajib: Tabel Kegiatan, Asesmen, dan Tanda Tangan: Kepala Sekolah (AHMAD JUNAIDI, S.Pd) & Guru (ANDY KURNIAWAN, S.Pd.SD).
+    Wajib ada: Tabel Kegiatan Pembelajaran, Asesmen, dan Tanda Tangan: Kepala Sekolah (AHMAD JUNAIDI, S.Pd) & Guru (ANDY KURNIAWAN, S.Pd.SD).
     """
 
-    payload = {"contents": [{"parts": [{"text": prompt_text}]}]}
-    headers = {'Content-Type': 'application/json'}
-    
-    try:
-        response = requests.post(url, headers=headers, data=json.dumps(payload), timeout=60)
-        res_json = response.json()
+    last_error = ""
+    for model in models_to_try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
+        payload = {"contents": [{"parts": [{"text": prompt_text}]}]}
+        headers = {'Content-Type': 'application/json'}
         
-        if 'candidates' in res_json:
-            hasil_ai = res_json['candidates'][0]['content']['parts'][0]['text']
-            return hasil_ai.replace("```html", "").replace("```", "").strip()
-        else:
-            msg = res_json.get('error', {}).get('message', 'Model tidak ditemukan')
-            return f"<div style='color:red; background:white; padding:15px;'><b>API Error:</b> {msg}</div>"
+        try:
+            response = requests.post(url, headers=headers, data=json.dumps(payload), timeout=30)
+            res_json = response.json()
             
-    except Exception as e:
-        return f"<div style='color:red; background:white; padding:15px;'><b>Koneksi Gagal:</b> {str(e)}</div>"
+            if 'candidates' in res_json:
+                hasil_ai = res_json['candidates'][0]['content']['parts'][0]['text']
+                # Bersihkan tag code markdown jika ada
+                hasil_clean = hasil_ai.replace("```html", "").replace("```", "").strip()
+                return hasil_clean
+            else:
+                last_error = res_json.get('error', {}).get('message', 'Unknown Error')
+        except Exception as e:
+            last_error = str(e)
+            
+    return f"<div style='color:red; background:white; padding:15px;'><b>Gagal:</b> {last_error}</div>"
 
 # ==============================
 # 4. UI UTAMA
 # ==============================
-st.markdown("<div class='main-title'><h1>📄 RPP GENERATOR PRO</h1><p>Versi Stabil 1.0</p></div>", unsafe_allow_html=True)
+st.markdown("<div class='main-title'><h1>📄 RPP GENERATOR PRO</h1><p>Versi Teruji - Andy Kurniawan</p></div>", unsafe_allow_html=True)
 
 with st.form("rpp_form"):
     c1, c2 = st.columns(2)
@@ -93,30 +98,34 @@ with st.form("rpp_form"):
         fase = st.text_input("Fase / Kelas", "B / IV")
         jml = st.number_input("Jumlah Pertemuan", 1, 5, 1)
     
-    materi = st.text_area("Materi")
-    tujuan = st.text_area("Tujuan")
+    materi = st.text_area("Materi Utama")
+    tujuan = st.text_area("Tujuan Pembelajaran")
     
     pertemuan_data = []
     for i in range(int(jml)):
         st.markdown(f"**Pertemuan {i+1}**")
         col1, col2 = st.columns(2)
-        with col1: m = st.selectbox(f"Model P{i+1}", ["PBL", "PjBL", "Ceramah"], key=f"m{i}")
+        with col1: m = st.selectbox(f"Model P{i+1}", ["PBL", "PjBL", "Discovery", "Ceramah"], key=f"m{i}")
         with col2: w = st.text_input(f"Waktu P{i+1}", "2x35m", key=f"w{i}")
-        pertemuan_data.append({"model": m, "waktu": w, "tanggal": "Sesuai Jadwal"})
+        pertemuan_data.append({"model": m, "waktu": w})
     
     submit = st.form_submit_button("🚀 GENERATE RPP")
 
 if submit:
-    with st.spinner("Menghubungkan ke pusat AI..."):
-        data_input = {"sekolah": sekolah, "mapel": mapel, "fase": fase, "materi": materi, "tujuan": tujuan, "pertemuan": pertemuan_data}
-        hasil = generate_rpp_direct(data_input)
-        
-        if "API Error" in hasil:
-            st.markdown(hasil, unsafe_allow_html=True)
-        else:
-            st.success("✅ RPP BERHASIL!")
-            st.markdown("<div class='preview-box'>", unsafe_allow_html=True)
-            st.html(hasil)
-            st.markdown("</div>", unsafe_allow_html=True)
+    if not GEMINI_API_KEY:
+        st.error("API Key belum diisi di Secrets!")
+    else:
+        with st.spinner("Sedang menyusun RPP..."):
+            data_input = {"sekolah": sekolah, "mapel": mapel, "fase": fase, "materi": materi, "tujuan": tujuan, "pertemuan": pertemuan_data}
+            hasil = generate_rpp_direct(data_input)
+            
+            if "Gagal:" in hasil:
+                st.markdown(hasil, unsafe_allow_html=True)
+            else:
+                st.success("✅ RPP BERHASIL DISUSUN!")
+                st.markdown("<div class='preview-box'>", unsafe_allow_html=True)
+                st.markdown(hasil, unsafe_allow_html=True)
+                st.markdown("</div>", unsafe_allow_html=True)
+                st.info("Tips: Klik kanan pada halaman lalu pilih 'Print' dan simpan sebagai PDF.")
 
 st.markdown("<br><p style='text-align: center; color: #555;'>© 2026 RPP Generator Pro | Andy Kurniawan, S.Pd.SD</p>", unsafe_allow_html=True)
