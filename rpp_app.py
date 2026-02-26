@@ -198,7 +198,7 @@ if submit:
     else:
         with st.spinner("🧠 AI sedang menyusun RPP lengkap untuk 15 pertemuan..."):
             genai.configure(api_key=GEMINI_API_KEY)
-            model = genai.GenerativeModel("gemini-1.5-flash")
+            model = genai.GenerativeModel(model_name="models/gemini-1.5-flash")
             
             pertemuan_str = "\n".join([f"P{i+1}: Model {p['model']}, Waktu {p['waktu']}, Tanggal {p['tanggal']}" for i, p in enumerate(pertemuan_data)])
             
@@ -240,3 +240,4 @@ if submit:
             )
 
 st.markdown("<br><p style='text-align: center; color: #555;'>© 2026 RPP Generator Pro | Andy Kurniawan, S.Pd.SD</p>", unsafe_allow_html=True)
+
