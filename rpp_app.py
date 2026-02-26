@@ -74,97 +74,85 @@ def create_word(html_content):
     except: return None
 
 # ==============================
-# 4. FUNGSI GENERATE (AUTO-HUNTING MODEL)
+# 4. FUNGSI GENERATE (ULTRA HUNTING)
 # ==============================
 def generate_rpp_direct(data):
-    # Mencoba berbagai nama model yang mungkin didukung akun Anda
+    # MENCOBA SEMUA VARIASI MODEL YANG MUNGKIN ADA
     model_options = [
+        "gemini-1.5-flash-8b", # Model terbaru paling ringan
         "gemini-1.5-flash",
+        "gemini-1.5-pro",
         "gemini-1.5-flash-latest",
+        "gemini-1.0-pro",
         "gemini-pro"
     ]
     
     pertemuan_str = "\n".join([f"P{i+1}: Model {p['model']}, Waktu {p['waktu']}, Tgl {p['tanggal']}" for i, p in enumerate(data['pertemuan'])])
-    
-    prompt_text = f"""
-    Buatlah RPP Kurikulum Merdeka Lengkap dalam format HTML (tabel border="1").
-    Sekolah: {data['sekolah']}, Mapel: {data['mapel']}, Fase: {data['fase']}.
-    Materi: {data['materi']}, Tujuan: {data['tujuan']}.
-    Rincian Pertemuan:
-    {pertemuan_str}
-    Wajib ada: Tabel Kegiatan tiap pertemuan, Asesmen, dan Tanda Tangan: 
-    Kepala Sekolah (AHMAD JUNAIDI, S.Pd) & Guru (ANDY KURNIAWAN, S.Pd.SD).
-    """
+    prompt_text = f"Buatlah RPP Kurikulum Merdeka HTML. Sekolah: {data['sekolah']}, Mapel: {data['mapel']}, Fase: {data['fase']}, Materi: {data['materi']}, Tujuan: {data['tujuan']}. Detail: {pertemuan_str}. Tanda tangan: AHMAD JUNAIDI & ANDY KURNIAWAN."
 
     last_error = ""
     for model_name in model_options:
-        # Memaksa URL menggunakan v1 STABIL (Bukan Beta)
+        # Mencoba jalur v1 (Stable)
         url = f"https://generativelanguage.googleapis.com/v1/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
         payload = {"contents": [{"parts": [{"text": prompt_text}]}]}
         headers = {'Content-Type': 'application/json'}
         
         try:
-            response = requests.post(url, headers=headers, data=json.dumps(payload))
+            response = requests.post(url, headers=headers, data=json.dumps(payload), timeout=30)
             res_json = response.json()
             
             if 'candidates' in res_json:
                 hasil_ai = res_json['candidates'][0]['content']['parts'][0]['text']
-                # Bersihkan tag markdown html
-                hasil_ai = hasil_ai.replace("```html", "").replace("```", "").strip()
-                return hasil_ai
+                return hasil_ai.replace("```html", "").replace("```", "").strip()
             else:
-                last_error = res_json.get('error', {}).get('message', 'Unknown error')
-                continue # Coba model berikutnya jika gagal
-        except Exception as e:
-            last_error = str(e)
+                last_error = f"{model_name}: {res_json.get('error', {}).get('message', 'N/A')}"
+                continue 
+        except:
             continue
 
-    return f"<div style='color:red; background:white; padding:15px;'><b>SEMUA MODEL GAGAL:</b> {last_error}</div>"
+    return f"<div style='color:red; background:white; padding:15px; border:2px solid red;'><b>GAGAL TOTAL:</b> Google menolak semua model.<br>Pesan Terakhir: {last_error}</div>"
 
 # ==============================
 # 5. UI UTAMA
 # ==============================
-MODELS_LIST = ["PBL", "PjBL", "Discovery Learning", "Inquiry", "STAD", "Jigsaw", "Ceramah", "Talking Stick"]
+MODELS_LIST = ["PBL", "PjBL", "Discovery", "Inquiry", "Ceramah"]
 
-st.markdown("<div class='main-title'><h1>📄 RPP GENERATOR PRO</h1><p>Sistem Bypass Anti-Error 404</p></div>", unsafe_allow_html=True)
+st.markdown("<div class='main-title'><h1>📄 RPP GENERATOR PRO</h1><p>Versi Terakhir (Ultra Hunting)</p></div>", unsafe_allow_html=True)
 
 with st.form("rpp_form"):
     c1, c2 = st.columns(2)
     with c1:
-        sekolah = st.text_input("Nama Sekolah", "SDN ...")
-        mapel = st.text_input("Mata Pelajaran", "PJOK")
+        sekolah = st.text_input("Sekolah", "SDN ...")
+        mapel = st.text_input("Mapel", "PJOK")
     with c2:
-        fase = st.text_input("Fase / Kelas", "B / IV")
-        jml = st.number_input("Jumlah Pertemuan", 1, 15, 1)
+        fase = st.text_input("Fase", "B / IV")
+        jml = st.number_input("Pertemuan", 1, 15, 1)
     
-    materi = st.text_area("Materi Utama (Contoh: Permainan Bola Besar)")
-    tujuan = st.text_area("Tujuan Pembelajaran")
+    materi = st.text_area("Materi")
+    tujuan = st.text_area("Tujuan")
     
     pertemuan_data = []
     for i in range(int(jml)):
-        st.markdown(f"<div class='meeting-card'>Pertemuan {i+1}</div>", unsafe_allow_html=True)
         col1, col2, col3 = st.columns(3)
         with col1: m = st.selectbox(f"Model P{i+1}", MODELS_LIST, key=f"m{i}")
-        with col2: w = st.text_input(f"Waktu P{i+1}", "2x35 Menit", key=f"w{i}")
+        with col2: w = st.text_input(f"Waktu P{i+1}", "2x35m", key=f"w{i}")
         with col3: t = st.date_input(f"Tgl P{i+1}", key=f"t{i}")
         pertemuan_data.append({"model": m, "waktu": w, "tanggal": t.strftime("%d/%m/%Y")})
     
-    submit = st.form_submit_button("🚀 GENERATE RPP")
+    submit = st.form_submit_button("🚀 GENERATE")
 
 if submit:
-    with st.spinner("Menghubungkan langsung ke server Google AI..."):
+    with st.spinner("Mencoba 6 model AI sekaligus..."):
         data_input = {"sekolah": sekolah, "mapel": mapel, "fase": fase, "materi": materi, "tujuan": tujuan, "pertemuan": pertemuan_data}
         hasil = generate_rpp_direct(data_input)
         
-        if "SEMUA MODEL GAGAL" in hasil:
+        if "GAGAL TOTAL" in hasil:
             st.markdown(hasil, unsafe_allow_html=True)
         else:
-            st.success("✅ RPP BERHASIL DISUSUN!")
+            st.success("✅ BERHASIL!")
             st.markdown("<div class='preview-box'>", unsafe_allow_html=True)
             st.html(hasil)
             st.markdown("</div>", unsafe_allow_html=True)
             
             file_docx = create_word(hasil)
             st.download_button("📥 Download Word", file_docx, f"RPP_{mapel}.docx")
-
-st.markdown("<br><p style='text-align: center; color: #555;'>© 2026 RPP Generator Pro | Andy Kurniawan, S.Pd.SD</p>", unsafe_allow_html=True)
