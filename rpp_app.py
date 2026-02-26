@@ -87,17 +87,17 @@ def create_word(html_content):
         return None
 
 # ==============================
-# 5. FUNGSI GENERATE RPP (ANTI-404 FIX)
+# 5. FUNGSI GENERATE RPP (TRIPLE-FIX)
 # ==============================
 def generate_rpp(data):
     if not GEMINI_API_KEY:
-        return "<p style='color:red;'>Error: API KEY tidak ditemukan!</p>"
+        return "<p style='color:red;'>Error: API KEY tidak ditemukan di Secrets!</p>"
     
     try:
-        # Inisialisasi API
+        # Konfigurasi API
         genai.configure(api_key=GEMINI_API_KEY)
         
-        # Gunakan model tunggal tanpa prefix models/ untuk stabilitas v1
+        # PERBAIKAN: Gunakan nama pendek (tanpa models/) agar library memilih v1/v1beta sendiri
         model = genai.GenerativeModel('gemini-1.5-flash')
         
         pertemuan_str = "\n".join([f"P{i+1}: Model {p['model']}, Waktu {p['waktu']}, Tgl {p['tanggal']}" for i, p in enumerate(data['pertemuan'])])
@@ -106,30 +106,37 @@ def generate_rpp(data):
         Buatlah RPP Kurikulum Merdeka Profesional dalam format HTML (tabel dengan border="1").
         Sekolah: {data['sekolah']}, Mapel: {data['mapel']}, Fase: {data['fase']}.
         Materi: {data['materi']}, Tujuan: {data['tujuan']}.
-        Rincian Pertemuan:
-        {pertemuan_str}
+        Rincian Pertemuan: {pertemuan_str}
         
-        WAJIB ADA:
-        1. Identitas Lengkap.
-        2. Tabel Kegiatan Pembelajaran (Langkah, Deskripsi, Waktu) tiap pertemuan.
-        3. Asesmen dan Rubrik Penilaian.
-        4. Tanda Tangan: Kepala Sekolah (AHMAD JUNAIDI, S.Pd) & Guru (ANDY KURNIAWAN, S.Pd.SD).
+        WAJIB: Tabel Kegiatan (Langkah, Deskripsi, Waktu), Asesmen, dan Tanda Tangan: 
+        Kepala Sekolah (AHMAD JUNAIDI, S.Pd) & Guru (ANDY KURNIAWAN, S.Pd.SD).
         """
         
-        response = model.generate_content(prompt)
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.types.GenerationConfig(temperature=0.7)
+        )
         return response.text.replace("```html", "").replace("```", "").strip()
 
     except Exception as e:
-        return f"""
-        <div style='color:red; background:white; padding:15px; border:2px solid red; border-radius:10px;'>
-        <b>Gagal Menghubungi AI (Error 404):</b><br>
-        {str(e)}<br><br>
-        <b>SOLUSI:</b><br>
-        1. Ganti API Key Anda di Google AI Studio (Pilih 'Create API key in new project').<br>
-        2. Masukkan Key baru ke Secrets Streamlit.<br>
-        3. <b>REBOOT APP</b> di menu Manage App Streamlit Cloud.
-        </div>
-        """
+        # FALLBACK 1: Jika Flash gagal 404, coba Gemini Pro (Model Stabil)
+        try:
+            model_alt = genai.GenerativeModel('gemini-pro')
+            response_alt = model_alt.generate_content(prompt)
+            return response_alt.text.replace("```html", "").replace("```", "").strip()
+        except Exception as e2:
+            # Jika semua model gagal, tampilkan instruksi solusi
+            return f"""
+            <div style='color:red; background:white; padding:15px; border:2px solid red; border-radius:10px;'>
+            <b>Masih Terjadi Error 404:</b><br>
+            <i>Detail: {str(e)}</i><br><br>
+            <b>PENYEBAB:</b> Google sedang membatasi akses API Key Anda ke model Flash/Pro.<br>
+            <b>SOLUSI TERAKHIR:</b><br>
+            1. Buka <a href='https://aistudio.google.com/'>Google AI Studio</a>.<br>
+            2. Buat API Key baru dengan <b>Akun Gmail Lain</b>.<br>
+            3. Masukkan Key baru tersebut ke <b>Secrets Streamlit</b> dan lakukan <b>REBOOT APP</b>.
+            </div>
+            """
 
 # ==============================
 # 6. DAFTAR MODEL PEMBELAJARAN
@@ -148,7 +155,7 @@ MODELS_LIST = [
 # ==============================
 # 7. UI UTAMA
 # ==============================
-st.markdown("<div class='main-title'><h1>📄 RPP GENERATOR PRO</h1><p>By Andy Kurniawan, S.Pd.SD</p></div>", unsafe_allow_html=True)
+st.markdown("<div class='main-title'><h1>📄 RPP GENERATOR PRO</h1><p>Andalan Guru Indonesia - By Andy Kurniawan, S.Pd.SD</p></div>", unsafe_allow_html=True)
 
 with st.form("rpp_form"):
     st.subheader("📋 Identitas RPP")
@@ -161,8 +168,8 @@ with st.form("rpp_form"):
         jml = st.number_input("Jumlah Pertemuan", 1, 15, 1)
     
     st.divider()
-    materi = st.text_area("Materi Utama", placeholder="Contoh: Senam Lantai")
-    tujuan = st.text_area("Tujuan Pembelajaran (TP)", placeholder="Contoh: Siswa dapat mempraktikkan guling depan")
+    materi = st.text_area("Materi Utama")
+    tujuan = st.text_area("Tujuan Pembelajaran (TP)")
     
     pertemuan_data = []
     for i in range(int(jml)):
@@ -180,16 +187,16 @@ with st.form("rpp_form"):
 
 if submit:
     if not materi or not tujuan:
-        st.error("⚠️ Isi materi dan tujuan dulu!")
+        st.error("⚠️ Silakan isi materi dan tujuan!")
     else:
-        with st.spinner("AI sedang menyusun RPP..."):
+        with st.spinner("🧠 AI sedang menyusun RPP Anda..."):
             data_input = {"sekolah": sekolah, "mapel": mapel, "fase": fase, "materi": materi, "tujuan": tujuan, "pertemuan": pertemuan_data}
             hasil_html = generate_rpp(data_input)
             
-            if "Gagal Menghubungi" in hasil_html:
+            if "Error" in hasil_html or "Masih Terjadi" in hasil_html:
                 st.markdown(hasil_html, unsafe_allow_html=True)
             else:
-                st.success("✅ RPP Berhasil Dibuat!")
+                st.success("✅ RPP Selesai Dibuat!")
                 st.markdown("<div class='preview-box'>", unsafe_allow_html=True)
                 st.html(hasil_html)
                 st.markdown("</div>", unsafe_allow_html=True)
