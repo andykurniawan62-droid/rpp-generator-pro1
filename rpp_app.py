@@ -1,5 +1,6 @@
 import streamlit as st
-import google.generativeai as genai
+import requests
+import json
 from io import BytesIO
 from docx import Document
 from docx.shared import Pt
@@ -25,7 +26,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ==============================
-# 2. SECRETS & API
+# 2. SECRETS & LOGIN
 # ==============================
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
 APP_PASSWORD = st.secrets.get("APP_PASSWORD", "12345")
@@ -73,50 +74,55 @@ def create_word(html_content):
     except: return None
 
 # ==============================
-# 4. FUNGSI GENERATE RPP (ULTRA STABLE VERSION)
+# 4. FUNGSI BYPASS API (DIRECT CALL)
 # ==============================
-def generate_rpp(data):
-    if not GEMINI_API_KEY:
-        return "Error: API Key Kosong"
+def generate_rpp_direct(data):
+    # Menggunakan endpoint v1 STABLE (Bukan Beta)
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    
+    pertemuan_str = "\n".join([f"P{i+1}: Model {p['model']}, Waktu {p['waktu']}, Tgl {p['tanggal']}" for i, p in enumerate(data['pertemuan'])])
+    
+    prompt_text = f"""
+    Buatlah RPP Kurikulum Merdeka dalam format HTML (tabel border="1").
+    Sekolah: {data['sekolah']}, Mapel: {data['mapel']}, Fase: {data['fase']}.
+    Materi: {data['materi']}, Tujuan: {data['tujuan']}.
+    Rincian: {pertemuan_str}
+    Wajib: Tabel Kegiatan, Asesmen, dan Tanda Tangan: Kepala Sekolah (AHMAD JUNAIDI, S.Pd) & Guru (ANDY KURNIAWAN, S.Pd.SD).
+    """
+
+    payload = {
+        "contents": [{
+            "parts": [{"text": prompt_text}]
+        }]
+    }
+    
+    headers = {'Content-Type': 'application/json'}
     
     try:
-        # Konfigurasi eksplisit
-        genai.configure(api_key=GEMINI_API_KEY)
+        response = requests.post(url, headers=headers, data=json.dumps(payload))
+        res_json = response.json()
         
-        # Menggunakan gemini-pro (model paling universal untuk versi 0.5.0)
-        model = genai.GenerativeModel('gemini-pro')
-        
-        pertemuan_str = "\n".join([f"P{i+1}: Model {p['model']}, Waktu {p['waktu']}, Tgl {p['tanggal']}" for i, p in enumerate(data['pertemuan'])])
-        
-        prompt = f"""
-        Buatlah RPP Kurikulum Merdeka dalam format HTML (tabel border="1").
-        Sekolah: {data['sekolah']}, Mapel: {data['mapel']}, Fase: {data['fase']}.
-        Materi: {data['materi']}, Tujuan: {data['tujuan']}.
-        Rincian: {pertemuan_str}
-        Wajib: Tabel Kegiatan, Asesmen, dan Tanda Tangan: Kepala Sekolah (AHMAD JUNAIDI, S.Pd) & Guru (ANDY KURNIAWAN, S.Pd.SD).
-        """
-        
-        # Proses generate
-        response = model.generate_content(prompt)
-        
-        # Bersihkan hasil
-        teks_hasil = response.text
-        if "```html" in teks_hasil:
-            teks_hasil = teks_hasil.split("```html")[1].split("```")[0]
-        elif "```" in teks_hasil:
-            teks_hasil = teks_hasil.split("```")[1].split("```")[0]
+        # Ambil teks dari struktur JSON Google
+        if 'candidates' in res_json:
+            hasil_ai = res_json['candidates'][0]['content']['parts'][0]['text']
+            # Bersihkan markdown
+            if "```html" in hasil_ai:
+                hasil_ai = hasil_ai.split("```html")[1].split("```")[0]
+            elif "```" in hasil_ai:
+                hasil_ai = hasil_ai.split("```")[1].split("```")[0]
+            return hasil_ai.strip()
+        else:
+            return f"<div style='color:red;'><b>API Google Error:</b> {res_json.get('error', {}).get('message', 'Unknown Error')}</div>"
             
-        return teks_hasil.strip()
-
     except Exception as e:
-        return f"<div style='color:red; background:white; padding:15px;'><b>Koneksi Google AI Gagal:</b> {str(e)}</div>"
+        return f"<div style='color:red;'><b>Gagal Koneksi:</b> {str(e)}</div>"
 
 # ==============================
 # 5. UI UTAMA
 # ==============================
-MODELS_LIST = ["PBL", "PjBL", "Discovery Learning", "Inquiry", "CTL", "STAD", "Jigsaw", "Demonstrasi", "Ceramah", "Talking Stick", "Mind Mapping"]
+MODELS_LIST = ["PBL", "PjBL", "Discovery Learning", "Inquiry", "STAD", "Jigsaw", "Demonstrasi", "Ceramah"]
 
-st.markdown("<div class='main-title'><h1>📄 RPP GENERATOR PRO</h1></div>", unsafe_allow_html=True)
+st.markdown("<div class='main-title'><h1>📄 RPP GENERATOR PRO</h1><p>Versi Bypass Jalur Stabil</p></div>", unsafe_allow_html=True)
 
 with st.form("rpp_form"):
     c1, c2 = st.columns(2)
@@ -142,14 +148,14 @@ with st.form("rpp_form"):
     submit = st.form_submit_button("🚀 GENERATE RPP")
 
 if submit:
-    with st.spinner("Menyambungkan ke satelit Google AI..."):
+    with st.spinner("Menembus blokir Google AI..."):
         data_input = {"sekolah": sekolah, "mapel": mapel, "fase": fase, "materi": materi, "tujuan": tujuan, "pertemuan": pertemuan_data}
-        hasil = generate_rpp(data_input)
+        hasil = generate_rpp_direct(data_input)
         
-        if "Koneksi Google AI Gagal" in hasil:
+        if "API Google Error" in hasil or "Gagal Koneksi" in hasil:
             st.markdown(hasil, unsafe_allow_html=True)
         else:
-            st.success("✅ RPP BERHASIL DIBUAT!")
+            st.success("✅ AKHIRNYA BERHASIL!")
             st.markdown("<div class='preview-box'>", unsafe_allow_html=True)
             st.html(hasil)
             st.markdown("</div>", unsafe_allow_html=True)
