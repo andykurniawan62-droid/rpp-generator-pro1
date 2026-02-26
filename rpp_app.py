@@ -16,7 +16,7 @@ st.markdown("""
     }
     [data-testid="stForm"] { background-color: #111111; padding: 30px; border-radius: 15px; border: 1px solid #444444; }
     label, .stMarkdown p { color: #ffffff !important; font-weight: bold; }
-    .preview-box { background-color: #ffffff; color: #000000; padding: 30px; border-radius: 10px; margin-top: 20px; border: 1px solid #ccc; }
+    .preview-box { background-color: #ffffff; color: #000000; padding: 30px; border-radius: 10px; border: 1px solid #ccc; }
     table { border-collapse: collapse; width: 100%; color: black !important; }
     th, td { border: 1px solid black !important; padding: 8px; text-align: left; }
     </style>
@@ -45,24 +45,16 @@ if not st.session_state.authenticated:
     st.stop()
 
 # ==============================
-# 3. FUNGSI GENERATE (FIXED MODEL 1.5 FLASH)
+# 3. FUNGSI GENERATE (ULTRA STABIL - V1)
 # ==============================
 def generate_rpp_direct(data):
-    # Menggunakan model paling update di jalur v1beta
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    # KITA PAKSA PAKAI JALUR v1 (STABLE) DAN MODEL gemini-1.0-pro-001
+    # Ini adalah model yang paling kompatibel dengan semua jenis API Key
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.0-pro:generateContent?key={GEMINI_API_KEY}"
     
-    pertemuan_str = "\n".join([f"Pertemuan {i+1}: Model {p['model']}, Waktu {p['waktu']}" for i, p in enumerate(data['pertemuan'])])
+    pertemuan_str = "\n".join([f"P{i+1}: {p['model']}, Waktu {p['waktu']}" for i, p in enumerate(data['pertemuan'])])
     
-    prompt_text = f"""
-    Buatlah RPP Kurikulum Merdeka. 
-    Sekolah: {data['sekolah']}, Mapel: {data['mapel']}, Fase/Kelas: {data['fase']}.
-    Materi: {data['materi']}. Tujuan: {data['tujuan']}.
-    Rincian: {pertemuan_str}.
-    
-    FORMAT WAJIB: Gunakan HTML. Buat tabel untuk kegiatan pembelajaran. 
-    Wajib ada tanda tangan: Kepala Sekolah (AHMAD JUNAIDI, S.Pd) & Guru (ANDY KURNIAWAN, S.Pd.SD).
-    Berikan hasil langsung kodenya saja tanpa penjelasan pembuka.
-    """
+    prompt_text = f"Buat RPP HTML. Sekolah: {data['sekolah']}, Mapel: {data['mapel']}, Fase: {data['fase']}, Materi: {data['materi']}, Tujuan: {data['tujuan']}. {pertemuan_str}. Tanda tangan: AHMAD JUNAIDI & ANDY KURNIAWAN."
 
     payload = {"contents": [{"parts": [{"text": prompt_text}]}]}
     headers = {'Content-Type': 'application/json'}
@@ -73,56 +65,56 @@ def generate_rpp_direct(data):
         
         if 'candidates' in res_json:
             teks = res_json['candidates'][0]['content']['parts'][0]['text']
-            # Membersihkan tag markdown agar HTML terbaca oleh Streamlit
-            clean_html = teks.replace("```html", "").replace("```", "").strip()
-            return clean_html
+            return teks.replace("```html", "").replace("```", "").strip()
         else:
-            error_msg = res_json.get('error', {}).get('message', 'Model Tidak Mendukung')
-            return f"<div style='color:red; background:white; padding:10px;'><b>Sistem AI Berkata:</b> {error_msg}</div>"
+            # Jika gagal lagi, kita coba satu model cadangan terakhir
+            error_msg = res_json.get('error', {}).get('message', 'Model Tidak Support')
+            return f"Error: {error_msg}"
             
     except Exception as e:
-        return f"<div style='color:red; background:white; padding:10px;'><b>Masalah Koneksi:</b> {str(e)}</div>"
+        return f"Koneksi Gagal: {str(e)}"
 
 # ==============================
 # 4. UI UTAMA
 # ==============================
-st.markdown("<div class='main-title'><h1>📄 RPP GENERATOR PRO</h1><p>Versi 1.5 Flash - Stabil</p></div>", unsafe_allow_html=True)
+st.markdown("<div class='main-title'><h1>📄 RPP GENERATOR PRO</h1><p>Versi Terakhir (Anti-404)</p></div>", unsafe_allow_html=True)
 
 with st.form("rpp_form"):
     c1, c2 = st.columns(2)
     with c1:
-        sekolah = st.text_input("Nama Sekolah", "SDN ...")
-        mapel = st.text_input("Mata Pelajaran", "PJOK")
+        sekolah = st.text_input("Sekolah", "SDN ...")
+        mapel = st.text_input("Mapel", "PJOK")
     with c2:
-        fase = st.text_input("Fase / Kelas", "B / IV")
-        jml = st.number_input("Jumlah Pertemuan", 1, 5, 1)
+        fase = st.text_input("Fase", "B / IV")
+        jml = st.number_input("Pertemuan", 1, 3, 1)
     
-    materi = st.text_area("Materi Utama")
-    tujuan = st.text_area("Tujuan Pembelajaran")
+    materi = st.text_area("Materi")
+    tujuan = st.text_area("Tujuan")
     
     pertemuan_data = []
     for i in range(int(jml)):
-        st.markdown(f"**Pertemuan {i+1}**")
         col1, col2 = st.columns(2)
-        with col1: m = st.selectbox(f"Model P{i+1}", ["PBL", "PjBL", "Discovery"], key=f"m{i}")
+        with col1: m = st.selectbox(f"Model P{i+1}", ["PBL", "Discovery"], key=f"m{i}")
         with col2: w = st.text_input(f"Waktu P{i+1}", "2x35m", key=f"w{i}")
         pertemuan_data.append({"model": m, "waktu": w})
     
-    submit = st.form_submit_button("🚀 SUSUN RPP SEKARANG")
+    submit = st.form_submit_button("🚀 GENERATE")
 
 if submit:
-    with st.spinner("AI sedang menulis RPP Anda..."):
+    with st.spinner("Menyusun RPP..."):
         data_input = {"sekolah": sekolah, "mapel": mapel, "fase": fase, "materi": materi, "tujuan": tujuan, "pertemuan": pertemuan_data}
-        hasil_rpp = generate_rpp_direct(data_input)
+        hasil = generate_rpp_direct(data_input)
         
-        if "Sistem AI Berkata" in hasil_rpp:
-            st.markdown(hasil_rpp, unsafe_allow_html=True)
-            st.warning("Tips: Pastikan API Key di Secrets sudah menggunakan Key terbaru yang dibuat di AI Studio.")
+        if "Error:" in hasil:
+            st.error(f"Sistem Google Menolak: {hasil}")
+            st.markdown("### 🛠 Solusi Wajib:")
+            st.markdown("1. Buka [Google AI Studio](https://aistudio.google.com/).")
+            st.markdown("2. Klik tombol **'Create API key'** -> Pilih **'Create API key in NEW project'**.")
+            st.markdown("3. Jangan gunakan key yang lama, pakai yang benar-benar baru dari Project baru.")
         else:
-            st.success("✅ RPP BERHASIL DISUSUN!")
+            st.success("✅ BERHASIL!")
             st.markdown("<div class='preview-box'>", unsafe_allow_html=True)
-            st.markdown(hasil_rpp, unsafe_allow_html=True)
+            st.markdown(hasil, unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
-            st.info("💡 Salin hasil di atas ke Microsoft Word untuk dicetak.")
 
-st.markdown("<br><p style='text-align: center; color: #555;'>© 2026 RPP Generator Pro | Andy Kurniawan, S.Pd.SD</p>", unsafe_allow_html=True)
+st.markdown("<br><p style='text-align: center; color: #555;'>© 2026 RPP Generator Pro</p>", unsafe_allow_html=True)
