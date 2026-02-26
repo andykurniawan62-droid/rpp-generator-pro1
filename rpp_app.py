@@ -87,53 +87,62 @@ def create_word(html_content):
         return None
 
 # ==============================
-# 5. FUNGSI GENERATE RPP (FORCED V1 STABLE)
+# 5. FUNGSI GENERATE RPP (V1 STABLE FIX)
 # ==============================
 def generate_rpp(data):
     if not GEMINI_API_KEY:
         return "<p style='color:red;'>Error: API KEY tidak ditemukan!</p>"
     
     try:
-        # Konfigurasi API dengan pemaksaan jalur v1
+        # Konfigurasi API Dasar
         genai.configure(api_key=GEMINI_API_KEY)
         
-        # Menggunakan nama model mentah tanpa 'models/' untuk bypass bug v1beta
-        model_name = 'gemini-1.5-flash'
-        model = genai.GenerativeModel(model_name=model_name)
+        # FIX: Gunakan inisialisasi model yang memaksa penggunaan jalur stabil
+        # Jika 'gemini-1.5-flash' gagal, kita langsung lompat ke daftar model cadangan
+        model_names = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
+        
+        model = None
+        for name in model_names:
+            try:
+                model = genai.GenerativeModel(model_name=name)
+                # Tes panggil singkat untuk memastikan model tersedia
+                model.generate_content("test", generation_config={"max_output_tokens": 1})
+                break
+            except:
+                continue
+
+        if not model:
+            return "<p style='color:red;'>Semua model AI sedang sibuk atau tidak tersedia di wilayah Anda.</p>"
         
         pertemuan_str = "\n".join([f"P{i+1}: Model {p['model']}, Waktu {p['waktu']}, Tgl {p['tanggal']}" for i, p in enumerate(data['pertemuan'])])
         
         prompt = f"""
-        Buatlah RPP Kurikulum Merdeka dalam format HTML (tabel dengan border="1").
+        Buatlah RPP Kurikulum Merdeka Profesional dalam format HTML (tabel dengan border="1").
         IDENTITAS: Sekolah: {data['sekolah']}, Mapel: {data['mapel']}, Fase: {data['fase']}.
         KONTEN: Materi: {data['materi']}, Tujuan: {data['tujuan']}.
         RINCIAN: {pertemuan_str}
-        SYARAT: Wajib ada Tabel Kegiatan (Langkah, Deskripsi, Waktu), Asesmen, dan Tanda Tangan: 
-        Kepala Sekolah (AHMAD JUNAIDI, S.Pd) & Guru (ANDY KURNIAWAN, S.Pd.SD).
+        SYARAT WAJIB:
+        1. Identitas lengkap di awal.
+        2. Tabel kegiatan (Langkah, Deskripsi, Waktu) per pertemuan.
+        3. Bagian Asesmen dan Media Pembelajaran.
+        4. Tanda Tangan: Kepala Sekolah (AHMAD JUNAIDI, S.Pd) dan Guru (ANDY KURNIAWAN, S.Pd.SD).
         """
         
-        # Panggil API
         response = model.generate_content(prompt)
         return response.text.replace("```html", "").replace("```", "").strip()
 
     except Exception as e:
-        # Jika gemini-1.5-flash gagal, coba gemini-1.0-pro (sangat stabil)
-        try:
-            model_alt = genai.GenerativeModel('gemini-pro')
-            response_alt = model_alt.generate_content(prompt)
-            return response_alt.text.replace("```html", "").replace("```", "").strip()
-        except Exception as e2:
-            return f"""
-            <div style='color:red; background:white; padding:15px; border:2px solid red; border-radius:10px;'>
-            <b>SERVER AI MENOLAK (Error 404):</b><br>
-            {str(e)}<br><br>
-            <b>SOLUSI TERAKHIR:</b><br>
-            1. Pergi ke <a href='https://aistudio.google.com/'>Google AI Studio</a>.<br>
-            2. Buat API Key baru (Klik 'Create API key in new project').<br>
-            3. Pastikan Anda <b>TIDAK</b> menggunakan VPN saat membuka aplikasi ini.<br>
-            4. Update Secrets di Streamlit Cloud lalu pilih <b>REBOOT APP</b>.
-            </div>
-            """
+        return f"""
+        <div style='color:red; background:white; padding:15px; border:2px solid red; border-radius:10px;'>
+        <b>SERVER AI MENOLAK (Error 404):</b><br>
+        <i>Detail: {str(e)}</i><br><br>
+        <b>SOLUSI TERAKHIR:</b><br>
+        1. Buka <a href='https://aistudio.google.com/'>Google AI Studio</a>.<br>
+        2. Klik tombol "Get API Key" dan buat <b>API Key Baru</b> di Project baru.<br>
+        3. Kadang satu akun Google bisa terkena pembatasan, cobalah gunakan <b>Akun Gmail Lain</b> untuk membuat Key baru.<br>
+        4. Simpan di Secrets Streamlit dan pilih <b>REBOOT APP</b>.
+        </div>
+        """
 
 # ==============================
 # 6. DAFTAR MODEL PEMBELAJARAN
@@ -162,11 +171,11 @@ with st.form("rpp_form"):
         mapel = st.text_input("Mata Pelajaran", "PJOK")
     with c2:
         fase = st.text_input("Fase / Kelas", "B / IV")
-        jml = st.number_input("Jumlah Pertemuan", 1, 15, 1)
+        jml = st.number_input("Jumlah Pertemuan (Maks 15)", 1, 15, 1)
     
     st.divider()
-    materi = st.text_area("Materi")
-    tujuan = st.text_area("Tujuan Pembelajaran")
+    materi = st.text_area("Materi Utama")
+    tujuan = st.text_area("Tujuan Pembelajaran (TP)")
     
     pertemuan_data = []
     for i in range(int(jml)):
@@ -183,20 +192,23 @@ with st.form("rpp_form"):
     submit = st.form_submit_button("🚀 GENERATE RPP")
 
 if submit:
-    with st.spinner("AI sedang memproses..."):
-        data_input = {"sekolah": sekolah, "mapel": mapel, "fase": fase, "materi": materi, "tujuan": tujuan, "pertemuan": pertemuan_data}
-        hasil_html = generate_rpp(data_input)
-        
-        if "SERVER AI MENOLAK" in hasil_html:
-            st.markdown(hasil_html, unsafe_allow_html=True)
-        else:
-            st.success("✅ Selesai!")
-            st.markdown("<div class='preview-box'>", unsafe_allow_html=True)
-            st.html(hasil_html)
-            st.markdown("</div>", unsafe_allow_html=True)
+    if not materi or not tujuan:
+        st.error("Isi Materi dan Tujuan terlebih dahulu!")
+    else:
+        with st.spinner("AI sedang memproses RPP Anda..."):
+            data_input = {"sekolah": sekolah, "mapel": mapel, "fase": fase, "materi": materi, "tujuan": tujuan, "pertemuan": pertemuan_data}
+            hasil_html = generate_rpp(data_input)
             
-            file_docx = create_word(hasil_html)
-            if file_docx:
-                st.download_button("📥 Download Word", file_docx, f"RPP_{mapel}.docx")
+            if "SERVER AI MENOLAK" in hasil_html:
+                st.markdown(hasil_html, unsafe_allow_html=True)
+            else:
+                st.success("✅ RPP Berhasil Dibuat!")
+                st.markdown("<div class='preview-box'>", unsafe_allow_html=True)
+                st.html(hasil_html)
+                st.markdown("</div>", unsafe_allow_html=True)
+                
+                file_docx = create_word(hasil_html)
+                if file_docx:
+                    st.download_button("📥 Download Word", file_docx, f"RPP_{mapel}.docx")
 
 st.markdown("<br><p style='text-align: center; color: #555;'>© 2026 RPP Generator Pro | Andy Kurniawan, S.Pd.SD</p>", unsafe_allow_html=True)
