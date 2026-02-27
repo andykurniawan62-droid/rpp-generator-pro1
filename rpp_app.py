@@ -2,17 +2,16 @@ import streamlit as st
 import google.generativeai as genai
 from fpdf import FPDF
 
-# --- AMBIL API KEY DARI SISTEM KEAMANAN (SECRETS) ---
+# --- AMBIL API KEY ---
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
 
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-2.0-flash-001')
 else:
-    st.error("⚠️ API Key tidak ditemukan! Silakan masukkan di Settings > Secrets.")
+    st.error("⚠️ API Key tidak ditemukan di Secrets!")
     st.stop()
 
-# --- LOGIKA PEMBATASAN ---
+# --- LOGIKA PEMBATASAN USER ---
 if 'usage_count' not in st.session_state:
     st.session_state.usage_count = 0
 MAX_FREE_TRIAL = 5
@@ -44,7 +43,7 @@ st.markdown(f"""
 
 if st.session_state.usage_count >= MAX_FREE_TRIAL:
     st.error("🚫 BATAS PENGGUNAAN GRATIS TERCAPAI")
-    st.info(f"Hubungi Pak Andy Kurniawan: **081338370402** untuk aktivasi versi FULL.")
+    st.info("Hubungi Pak Andy Kurniawan: **081338370402** untuk versi FULL.")
     st.stop()
 
 # --- FORM INPUT ---
@@ -58,62 +57,69 @@ with st.form("form_rpp"):
     with col2:
         nama_guru = st.text_input("Nama Guru")
         nip_guru = st.text_input("NIP Guru")
-        mapel = st.selectbox("Mata Pelajaran SD", [
-            "Pendidikan Agama", "Pendidikan Pancasila", "Bahasa Indonesia", 
-            "Matematika", "IPAS", "Seni Musik", "Seni Rupa", "PJOK", "Bahasa Inggris"
-        ])
+        mapel = st.selectbox("Mata Pelajaran SD", ["Pendidikan Agama", "Pendidikan Pancasila", "Bahasa Indonesia", "Matematika", "IPAS", "Seni", "PJOK", "Bahasa Inggris"])
 
     st.subheader("📖 Detail Pembelajaran")
     fase = st.text_input("Fase/Kelas/Semester", value="Fase B / Kelas 4 / Ganjil")
     jml_pertemuan = st.number_input("Jumlah Pertemuan (1-15)", min_value=1, max_value=15, value=1)
     
     data_pertemuan = []
-    list_model = ["PBL", "PjBL", "Discovery Learning", "Inquiry Learning", "Contextual", "STAD", "Demonstrasi", "Mind Mapping"]
+    list_model = ["PBL", "PjBL", "Discovery Learning", "Inquiry", "STAD", "Demonstrasi", "Mind Mapping"]
 
     for i in range(int(jml_pertemuan)):
-        with st.expander(f"📍 Konfigurasi Pertemuan Ke-{i+1}", expanded=(i==0)):
+        with st.expander(f"📍 Pertemuan Ke-{i+1}", expanded=(i==0)):
             c1, c2, c3 = st.columns([2,1,1])
             with c1:
                 m = st.selectbox(f"Model P{i+1}", list_model, key=f"m_{i}")
             with c2:
                 w = st.text_input(f"Waktu P{i+1}", value="2x35 Menit", key=f"w_{i}")
             with c3:
-                t = st.text_input(f"Tanggal P{i+1}", placeholder="Tgl-Bln-Thn", key=f"t_{i}")
+                t = st.text_input(f"Tanggal P{i+1}", key=f"t_{i}")
             data_pertemuan.append({"no": i+1, "model": m, "waktu": w, "tgl": t})
     
-    st.markdown("---")
     tujuan = st.text_area("Tujuan Pembelajaran Umum")
-    materi = st.text_area("Detail Materi Pokok (KD/CP)")
-
+    materi = st.text_area("Detail Materi Pokok")
     submitted = st.form_submit_button("🚀 GENERATE RPP")
 
 if submitted:
     if not nama_sekolah or not materi:
-        st.warning("Mohon isi Nama Sekolah dan Detail Materi!")
+        st.warning("Mohon isi Nama Sekolah dan Materi!")
     else:
-        try:
-            with st.spinner("AI sedang memproses RPP..."):
-                jadwal_str = ""
-                for p in data_pertemuan:
-                    jadwal_str += f"- Pertemuan {p['no']}: Model {p['model']}, Waktu {p['waktu']}, Tanggal {p['tgl']}\n"
+        # Daftar model yang akan dicoba (Fallback)
+        model_names = ['gemini-2.0-flash-001', 'gemini-1.5-flash-latest']
+        success = False
+        
+        for m_name in model_names:
+            try:
+                with st.spinner(f"Mencoba menyusun dengan {m_name}..."):
+                    active_model = genai.GenerativeModel(m_name)
+                    
+                    jadwal_str = ""
+                    for p in data_pertemuan:
+                        jadwal_str += f"- Pertemuan {p['no']}: Model {p['model']}, Waktu {p['waktu']}, Tanggal {p['tgl']}\n"
 
-                prompt = f"""
-                Buatlah RPP profesional untuk SD:
-                Sekolah: {nama_sekolah} | Guru: {nama_guru} | Kepsek: {nama_kepsek}
-                Mapel: {mapel} | Kelas: {fase}
-                JADWAL PERTEMUAN ({jml_pertemuan} Kali): {jadwal_str}
-                Materi Pokok: {materi} | Tujuan Umum: {tujuan}
-                Sertakan langkah pembelajaran detail per pertemuan dan instrumen penilaian.
-                """
-                response = model.generate_content(prompt)
-                st.session_state.usage_count += 1
-                st.success(f"✅ BERHASIL! (Sisa Kuota: {MAX_FREE_TRIAL - st.session_state.usage_count})")
-                st.markdown(response.text)
-                
-                pdf_bytes = create_pdf(response.text)
-                st.download_button(label="📥 DOWNLOAD SEBAGAI PDF", data=pdf_bytes, file_name=f"RPP_{mapel}.pdf", mime="application/pdf")
-        except Exception as e:
-            st.error(f"Terjadi Kendala: {e}")
+                    prompt = f"Buat RPP SD: {nama_sekolah}, Mapel: {mapel}, Kelas: {fase}. Jadwal: {jadwal_str}. Materi: {materi}. Tujuan: {tujuan}. Jabarkan langkah pembelajaran detail per pertemuan."
+                    
+                    response = active_model.generate_content(prompt)
+                    
+                    st.session_state.usage_count += 1
+                    st.success(f"✅ BERHASIL! (Model: {m_name})")
+                    st.markdown(response.text)
+                    
+                    pdf_bytes = create_pdf(response.text)
+                    st.download_button("📥 DOWNLOAD PDF", data=pdf_bytes, file_name=f"RPP_{mapel}.pdf")
+                    success = True
+                    break # Berhenti jika sudah sukses
+            except Exception as e:
+                if "429" in str(e):
+                    st.warning(f"Model {m_name} sedang limit. Mencoba cadangan...")
+                    continue
+                else:
+                    st.error(f"Terjadi Kendala: {e}")
+                    break
+        
+        if not success:
+            st.error("⚠️ Semua jalur kuota AI sedang penuh. Silakan tunggu 1 menit lalu klik tombol Generate kembali.")
 
 st.markdown("---")
 st.caption(f"© 2026 AI Generator Pro - Andy Kurniawan")
