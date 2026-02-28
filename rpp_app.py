@@ -1,183 +1,149 @@
 import streamlit as st
-import google.generativeai as genai
-from fpdf import FPDF
+import requests
+import json
 
-# --- KONFIGURASI API KEY DARI SECRETS ---
-# Pastikan Anda sudah memasukkan GEMINI_API_KEY di dashboard Streamlit (Settings > Secrets)
-GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
+# ==============================
+# 1. KONFIGURASI HALAMAN
+# ==============================
+st.set_page_config(page_title="RPP Generator Pro - Andy Kurniawan", page_icon="📄", layout="wide")
 
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-else:
-    st.error("⚠️ API Key tidak ditemukan! Masukkan API Key di 'Settings > Secrets' pada Dashboard Streamlit.")
-    st.stop()
+st.markdown("""
+    <style>
+    .stApp { background-color: #000000; color: #ffffff; }
+    .main-title { color: #ffffff; text-align: center; padding: 20px; background: #1e1e1e; border-radius: 15px; border: 1px solid #3b82f6; margin-bottom: 25px; }
+    
+    #rpp-cetak { 
+        background-color: #ffffff !important; 
+        color: #000000 !important; 
+        padding: 40px 60px; 
+        font-family: 'Times New Roman', Times, serif;
+        font-size: 12pt;
+        line-height: 1.5;
+        border: 1px solid #ccc;
+    }
+    #rpp-cetak h1 { text-align: center; font-size: 16pt; text-transform: uppercase; text-decoration: underline; color: #000; }
+    #rpp-cetak table { width: 100%; border-collapse: collapse; margin-bottom: 15px; color: #000; }
+    #rpp-cetak table.border th, #rpp-cetak table.border td { border: 1px solid black !important; padding: 8px; }
+    #rpp-cetak table.no-border td { border: none !important; padding: 4px; }
 
-# --- LOGIKA PEMBATASAN PENGGUNA (SESSION BASED) ---
-if 'usage_count' not in st.session_state:
-    st.session_state.usage_count = 0
-
-MAX_FREE_TRIAL = 5
-
-# --- FUNGSI GENERATE PDF ---
-class RPP_PDF(FPDF):
-    def header(self):
-        self.set_font('Arial', 'B', 12)
-        self.cell(0, 10, 'RENCANA PELAKSANAAN PEMBELAJARAN (RPP)', 0, 1, 'C')
-        self.ln(5)
-
-def create_pdf(text):
-    pdf = RPP_PDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=10)
-    # Membersihkan karakter non-latin1 agar PDF tidak error/crash
-    clean_text = text.encode('latin-1', 'ignore').decode('latin-1')
-    pdf.multi_cell(0, 7, txt=clean_text)
-    return pdf.output(dest='S')
-
-# --- TAMPILAN APLIKASI ---
-st.set_page_config(page_title="AI RPP Generator Pro", page_icon="📝", layout="centered")
-
-# Header Identitas Pembuat
-st.markdown(f"""
-    <div style="background-color:#007BFF;padding:20px;border-radius:10px;text-align:center;margin-bottom:20px;">
-        <h1 style="color:white;margin:0;">AI RPP GENERATOR PRO</h1>
-        <p style="color:white;font-weight:bold;margin:5px;">Karya: ANDY KURNIAWAN (WA: 081338370402)</p>
-    </div>
-""", unsafe_allow_html=True)
-
-# Cek Pembatasan Kuota Gratis
-if st.session_state.usage_count >= MAX_FREE_TRIAL:
-    st.error("🚫 BATAS PENGGUNAAN GRATIS TERCAPAI")
-    st.markdown(f"""
-    <div style="background-color:#fff3cd; padding:15px; border-left: 5px solid #ffa000; border-radius: 5px;">
-        <h3 style="color:#856404; margin-top:0;">Daftar Harga Versi Full:</h3>
-        <ul style="color:#856404;">
-            <li><b>Versi Full (50x Generate):</b> Rp 200.000</li>
-            <li><b>Versi Full + Pemeliharaan:</b> Rp 600.000</li>
-        </ul>
-        <p style="color:#856404; font-weight:bold;">Hubungi Andy Kurniawan: 081338370402 untuk Aktivasi</p>
-    </div>
+    @media print {
+        header, footer, .stSidebar, .stButton, [data-testid="stForm"], .main-title, .stAlert, .download-btn {
+            display: none !important;
+        }
+        .stApp { background-color: white !important; }
+        #rpp-cetak { border: none !important; width: 100%; padding: 0; margin: 0; }
+    }
+    </style>
     """, unsafe_allow_html=True)
+
+# ==============================
+# 2. LOGIN & AUTH
+# ==============================
+GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
+APP_PASSWORD = st.secrets.get("APP_PASSWORD", "12345")
+
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+
+if not st.session_state.authenticated:
+    st.markdown("<div class='main-title'><h1>🔐 Akses Guru RPP Pro</h1><p>Andy Kurniawan, S.Pd.SD</p></div>", unsafe_allow_html=True)
+    c1, c2, c3 = st.columns([1,2,1])
+    with c2:
+        pwd = st.text_input("Password", type="password")
+        if st.button("Masuk"):
+            if pwd == APP_PASSWORD:
+                st.session_state.authenticated = True
+                st.rerun()
+            else: st.error("❌ Password salah")
     st.stop()
 
-# --- FORM INPUT PENGGUNA ---
-with st.form("main_form"):
-    st.subheader("🏢 Data Administrasi Sekolah")
+# ==============================
+# 3. FUNGSI AI DENGAN MULTI-MODEL (FALLBACK)
+# ==============================
+def generate_rpp_ai(data):
+    # DAFTAR MODEL YANG AKAN DICRY SATU PER SATU
+    model_variants = [
+        "gemini-3.1-pro-preview", 
+        "gemini-3-flash-preview",
+        "gemini-2.5-flash",
+        "gemini-2.0-flash"
+    ]
+    
+    pertemuan_str = "\n".join([f"Pertemuan {i+1}: Model {p['model']}, Waktu {p['waktu']}" for i, p in enumerate(data['pertemuan'])])
+    
+    prompt = f"""
+    Buat RPP Kurikulum Merdeka Lengkap dalam HTML. 
+    Identitas:
+    Sekolah: {data['sekolah']}
+    Mapel: {data['mapel']}
+    Fase/Kelas: {data['fase']}
+    Materi: {data['materi']}
+    Tujuan: {data['tujuan']}
+    {pertemuan_str}
+
+    Format WAJIB:
+    - Judul <h1> RENCANA PELAKSANAAN PEMBELAJARAN
+    - Tabel Identitas & Tanda tangan pakai <table class="no-border">
+    - Tabel Langkah Pembelajaran pakai <table class="border"> (Kolom: No, Tahap, Kegiatan, Waktu)
+    - Tanda Tangan: Kiri (Kepala Sekolah AHMAD JUNAIDI, S.Pd), Kanan (Guru ANDY KURNIAWAN, S.Pd.SD)
+    - Jangan sertakan teks markdown ```html, berikan tag HTML saja.
+    """
+
+    for model_name in model_variants:
+        url = f"[https://generativelanguage.googleapis.com/v1beta/models/](https://generativelanguage.googleapis.com/v1beta/models/){model_name}:generateContent?key={GEMINI_API_KEY}"
+        try:
+            response = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=45)
+            res_json = response.json()
+            
+            if 'candidates' in res_json:
+                content = res_json['candidates'][0]['content']['parts'][0]['text']
+                return content.replace("```html", "").replace("```", "").strip()
+            else:
+                # Jika gagal, lanjut ke model berikutnya di list
+                continue
+        except:
+            continue
+            
+    return "<p style='color:red;'>Maaf, semua model AI (3.1, 3.0, 2.5, 2.0) gagal merespon. Silakan periksa API Key atau koneksi Anda.</p>"
+
+# ==============================
+# 4. UI UTAMA
+# ==============================
+st.markdown("<div class='main-title'><h1>📄 RPP GENERATOR PRO</h1><p>Smart Fallback AI System (3.1-Pro s/d 2.0-Flash)</p></div>", unsafe_allow_html=True)
+
+with st.form("rpp_form"):
     col1, col2 = st.columns(2)
     with col1:
-        nama_sekolah = st.text_input("Nama Sekolah", placeholder="SD Negeri ...")
-        nama_kepsek = st.text_input("Nama Kepala Sekolah")
-        nip_kepsek = st.text_input("NIP Kepala Sekolah")
+        sekolah = st.text_input("Nama Sekolah", "SDN ...")
+        mapel = st.text_input("Mata Pelajaran", "PJOK")
     with col2:
-        nama_guru = st.text_input("Nama Guru")
-        nip_guru = st.text_input("NIP Guru")
-        mapel = st.selectbox("Mata Pelajaran", [
-            "Pendidikan Agama", "Pendidikan Pancasila", "Bahasa Indonesia", 
-            "Matematika", "IPAS", "Seni Musik", "Seni Rupa", "Seni Teater", 
-            "Seni Tari", "PJOK", "Bahasa Inggris", "Muatan Lokal"
-        ])
-
-    st.subheader("📖 Detail Pembelajaran")
-    fase = st.text_input("Fase/Kelas/Semester", value="Fase B / Kelas 4 / Ganjil")
-    jml_pertemuan = st.number_input("Jumlah Pertemuan (Maksimal 15)", min_value=1, max_value=15, value=1)
+        fase = st.text_input("Fase", "B / IV")
+        jml = st.number_input("Jumlah Pertemuan", 1, 3, 1)
     
-    # Form Dinamis Tiap Pertemuan
-    st.info("Atur detail Model, Waktu, dan Tanggal untuk tiap pertemuan:")
-    data_pertemuan = []
-    list_model = [
-        "PBL (Problem Based Learning)", "PjBL (Project Based Learning)", 
-        "Discovery Learning", "Inquiry Learning", "Contextual Learning", 
-        "STAD", "Demonstrasi", "Mind Mapping", "Role Playing", 
-        "Think Pair Share", "Problem Solving", "Blended Learning", 
-        "Flipped Classroom", "Project Citizen", "Ceramah Plus"
-    ]
+    materi = st.text_area("Materi")
+    tujuan = st.text_area("Tujuan Pembelajaran")
+    
+    pertemuan_data = []
+    for i in range(int(jml)):
+        c1, c2 = st.columns(2)
+        with c1: mod = st.selectbox(f"Model P{i+1}", ["PBL", "PjBL", "Discovery"], key=f"mod{i}")
+        with c2: wakt = st.text_input(f"Waktu P{i+1}", "2x35 Menit", key=f"wakt{i}")
+        pertemuan_data.append({"model": mod, "waktu": wakt})
+    
+    submit = st.form_submit_button("🚀 GENERATE RPP")
 
-    for i in range(int(jml_pertemuan)):
-        with st.expander(f"📍 Konfigurasi Pertemuan Ke-{i+1}", expanded=(i==0)):
-            c1, c2, c3 = st.columns([2,1,1])
-            with c1:
-                m = st.selectbox(f"Model P{i+1}", list_model, key=f"m_{i}")
-            with c2:
-                w = st.text_input(f"Waktu P{i+1}", value="2x35 Menit", key=f"w_{i}")
-            with c3:
-                t = st.text_input(f"Tanggal P{i+1}", placeholder="DD-MM-YYYY", key=f"t_{i}")
-            data_pertemuan.append({"no": i+1, "model": m, "waktu": w, "tgl": t})
+if submit:
+    with st.spinner("AI sedang mencari model yang tersedia dan menyusun RPP..."):
+        hasil = generate_rpp_ai({"sekolah":sekolah, "mapel":mapel, "fase":fase, "materi":materi, "tujuan":tujuan, "pertemuan":pertemuan_data})
+        st.session_state.hasil_rpp = hasil
 
-    tujuan_umum = st.text_area("Tujuan Pembelajaran Umum")
-    materi_pokok = st.text_area("Detail Materi Pokok (KD/CP)")
+if "hasil_rpp" in st.session_state:
+    st.markdown('<button onclick="window.print()" class="download-btn" style="width:100%; padding:15px; background-color:#28a745; color:white; border:none; border-radius:10px; cursor:pointer; font-weight:bold; font-size:16px; margin-bottom:20px;">📥 DOWNLOAD / CETAK RPP (PDF)</button>', unsafe_allow_html=True)
+    
+    st.markdown(f"""
+        <div id="rpp-cetak">
+            {st.session_state.hasil_rpp}
+        </div>
+    """, unsafe_allow_html=True)
 
-    btn_generate = st.form_submit_button("🚀 GENERATE RPP SEKARANG")
-
-# --- PROSES GENERATE OLEH AI ---
-if btn_generate:
-    if not nama_sekolah or not materi_pokok:
-        st.warning("Mohon lengkapi Nama Sekolah dan Detail Materi!")
-    else:
-        # Daftar model Fallback (Mencoba 2.0 Flash, jika limit coba 2.0 Flash Lite)
-        model_options = ['gemini-2.0-flash-001', 'gemini-2.0-flash-lite-001']
-        success = False
-
-        for model_name in model_options:
-            try:
-                with st.spinner(f"Sedang menyusun RPP menggunakan {model_name}..."):
-                    current_model = genai.GenerativeModel(model_name)
-                    
-                    # Menyusun rincian jadwal untuk prompt
-                    jadwal_detail = ""
-                    for p in data_pertemuan:
-                        jadwal_detail += f"- Pertemuan {p['no']}: Model {p['model']}, Alokasi Waktu {p['waktu']}, Tanggal {p['tgl']}\n"
-
-                    prompt = f"""
-                    Buatlah Rencana Pelaksanaan Pembelajaran (RPP) profesional dengan data:
-                    Nama Sekolah: {nama_sekolah}
-                    Kepala Sekolah: {nama_kepsek} (NIP: {nip_kepsek})
-                    Guru: {nama_guru} (NIP: {nip_guru})
-                    Mapel: {mapel} | Kelas: {fase}
-                    
-                    RINCIAN PERTEMUAN ({jml_pertemuan} kali):
-                    {jadwal_detail}
-                    
-                    Tujuan Umum: {tujuan_umum}
-                    Materi Pokok: {materi_pokok}
-
-                    SYARAT PENULISAN:
-                    1. Jabarkan Tujuan Khusus dan Langkah Pembelajaran (Pendahuluan, Inti, Penutup) secara spesifik untuk TIAP pertemuan.
-                    2. Langkah INTI harus sesuai dengan Model Pembelajaran yang dipilih pada pertemuan tersebut.
-                    3. Berikan bagian Instrumen Penilaian di akhir.
-                    4. Gunakan format yang rapi dan bahasa Indonesia formal.
-                    """
-
-                    response = current_model.generate_content(prompt)
-                    
-                    if response.text:
-                        st.session_state.usage_count += 1
-                        st.success(f"✅ RPP Berhasil Dibuat! (Sisa Kuota Gratis: {MAX_FREE_TRIAL - st.session_state.usage_count})")
-                        st.markdown("---")
-                        st.markdown(response.text)
-                        
-                        # Tombol Download PDF
-                        pdf_bytes = create_pdf(response.text)
-                        st.download_button(
-                            label="📥 DOWNLOAD SEBAGAI PDF",
-                            data=pdf_bytes,
-                            file_name=f"RPP_{mapel}_{nama_sekolah}.pdf",
-                            mime="application/pdf"
-                        )
-                        success = True
-                        break # Keluar dari loop jika berhasil
-            
-            except Exception as e:
-                if "429" in str(e):
-                    st.warning(f"Jalur {model_name} sedang penuh. Mencoba jalur cadangan...")
-                    continue
-                else:
-                    st.error(f"Terjadi kesalahan teknis: {e}")
-                    break
-
-        if not success:
-            st.error("⚠️ Semua jalur kuota AI Google sedang limit.")
-            st.info("Saran: Tunggu sekitar 1 menit agar kuota reset, lalu klik kembali tombol Generate.")
-
-# Footer Akhir
-st.markdown("---")
-st.caption(f"© 2026 AI Generator Pro - Andy Kurniawan | Sisa Sesi: {MAX_FREE_TRIAL - st.session_state.usage_count}")
+st.markdown("<br><p style='text-align: center; color: #555;'>© 2026 | Andy Kurniawan, S.Pd.SD</p>", unsafe_allow_html=True)
