@@ -55,7 +55,7 @@ if not GEMINI_API_KEY:
 genai.configure(api_key=GEMINI_API_KEY)
 if 'usage_count' not in st.session_state:
     st.session_state.usage_count = 0
-MAX_FREE_TRIAL = 5
+MAX_FREE_TRIAL = 3
 
 # ==============================
 # 3. INTERFACE (HEADER)
@@ -174,4 +174,5 @@ if "hasil_rpp" in st.session_state:
     st.markdown(f'<div class="rpp-paper">{st.session_state.hasil_rpp}</div>', unsafe_allow_html=True)
 
 st.markdown(f"<br><p style='text-align: center; color: #555;'>© 2026 AI Generator Pro - Andy Kurniawan</p>", unsafe_allow_html=True)
+
 
