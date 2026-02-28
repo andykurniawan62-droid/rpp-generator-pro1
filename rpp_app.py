@@ -1,225 +1,170 @@
 import streamlit as st
 import google.generativeai as genai
-from fpdf import FPDF
 
-# --- AMBIL API KEY ---
-# --- KONFIGURASI API KEY DARI SECRETS ---
-# Pastikan Anda sudah memasukkan GEMINI_API_KEY di dashboard Streamlit (Settings > Secrets)
+# ==============================
+# 1. KONFIGURASI HALAMAN & CSS
+# ==============================
+st.set_page_config(page_title="AI RPP Generator Pro", page_icon="📝", layout="wide")
+
+st.markdown("""
+    <style>
+    /* Tema Gelap untuk Aplikasi */
+    .stApp { background-color: #0e1117; color: #ffffff; }
+    
+    /* Area Kertas Putih untuk Hasil RPP */
+    .rpp-paper { 
+        background-color: #ffffff !important; 
+        color: #000000 !important; 
+        padding: 50px 70px; 
+        font-family: 'Times New Roman', Times, serif;
+        font-size: 12pt;
+        line-height: 1.6;
+        border-radius: 5px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+    }
+    .rpp-paper h1 { text-align: center; text-decoration: underline; font-size: 16pt; color: #000; }
+    .rpp-paper table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+    .rpp-paper th, .rpp-paper td { border: 1px solid black; padding: 8px; text-align: left; color: #000; }
+    .no-border, .no-border td { border: none !important; }
+
+    /* Tombol Sembunyi Saat Cetak */
+    @media print {
+        .stButton, .stForm, .stMarkdown:not(.rpp-paper), header, footer, .main-header {
+            display: none !important;
+        }
+        .stApp { background-color: white !important; }
+        .rpp-paper { box-shadow: none; border: none; padding: 0; margin: 0; width: 100%; }
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+# ==============================
+# 2. SISTEM KEAMANAN & API
+# ==============================
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
 
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-else:
+if not GEMINI_API_KEY:
     st.error("⚠️ API Key tidak ditemukan di Secrets!")
-    st.error("⚠️ API Key tidak ditemukan! Masukkan API Key di 'Settings > Secrets' pada Dashboard Streamlit.")
     st.stop()
 
-# --- LOGIKA PEMBATASAN USER ---
-# --- LOGIKA PEMBATASAN PENGGUNA (SESSION BASED) ---
+genai.configure(api_key=GEMINI_API_KEY)
+
 if 'usage_count' not in st.session_state:
     st.session_state.usage_count = 0
 
 MAX_FREE_TRIAL = 5
 
-# --- FUNGSI PDF ---
-# --- FUNGSI GENERATE PDF ---
-class RPP_PDF(FPDF):
-    def header(self):
-        self.set_font('Arial', 'B', 12)
-@@ -27,99 +29,155 @@
-    pdf = RPP_PDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=10)
-    # Membersihkan karakter non-latin1 agar PDF tidak error/crash
-    clean_text = text.encode('latin-1', 'ignore').decode('latin-1')
-    pdf.multi_cell(0, 7, txt=clean_text)
-    return pdf.output(dest='S')
-
-# --- TAMPILAN ---
-st.set_page_config(page_title="AI RPP Generator Pro", page_icon="📝")
-# --- TAMPILAN APLIKASI ---
-st.set_page_config(page_title="AI RPP Generator Pro", page_icon="📝", layout="centered")
-
-# Header Identitas Pembuat
+# ==============================
+# 3. INTERFACE (HEADER)
+# ==============================
 st.markdown(f"""
-    <div style="background-color:#007BFF;padding:20px;border-radius:10px;text-align:center;margin-bottom:20px;">
+    <div class="main-header" style="background-color:#007BFF;padding:20px;border-radius:10px;text-align:center;margin-bottom:20px;">
         <h1 style="color:white;margin:0;">AI RPP GENERATOR PRO</h1>
         <p style="color:white;font-weight:bold;margin:5px;">Karya: ANDY KURNIAWAN (WA: 081338370402)</p>
     </div>
 """, unsafe_allow_html=True)
 
-# Cek Pembatasan Kuota Gratis
 if st.session_state.usage_count >= MAX_FREE_TRIAL:
     st.error("🚫 BATAS PENGGUNAAN GRATIS TERCAPAI")
-    st.info("Hubungi Pak Andy Kurniawan: **081338370402** untuk versi FULL.")
-    st.markdown(f"""
-    <div style="background-color:#fff3cd; padding:15px; border-left: 5px solid #ffa000; border-radius: 5px;">
-        <h3 style="color:#856404; margin-top:0;">Daftar Harga Versi Full:</h3>
-        <ul style="color:#856404;">
-            <li><b>Versi Full (50x Generate):</b> Rp 200.000</li>
-            <li><b>Versi Full + Pemeliharaan:</b> Rp 600.000</li>
-        </ul>
-        <p style="color:#856404; font-weight:bold;">Hubungi Andy Kurniawan: 081338370402 untuk Aktivasi</p>
-    </div>
-    """, unsafe_allow_html=True)
+    st.info("Hubungi Pak Andy Kurniawan: 081338370402 untuk aktivasi Versi Full.")
     st.stop()
 
-# --- FORM INPUT ---
-with st.form("form_rpp"):
-    st.subheader("🏢 Data Administrasi")
-# --- FORM INPUT PENGGUNA ---
+# ==============================
+# 4. FORM INPUT
+# ==============================
 with st.form("main_form"):
     st.subheader("🏢 Data Administrasi Sekolah")
-    col1, col2 = st.columns(2)
-    with col1:
-        nama_sekolah = st.text_input("Nama Sekolah")
+    c1, c2 = st.columns(2)
+    with c1:
         nama_sekolah = st.text_input("Nama Sekolah", placeholder="SD Negeri ...")
         nama_kepsek = st.text_input("Nama Kepala Sekolah")
         nip_kepsek = st.text_input("NIP Kepala Sekolah")
-    with col2:
+    with c2:
         nama_guru = st.text_input("Nama Guru")
         nip_guru = st.text_input("NIP Guru")
-        mapel = st.selectbox("Mata Pelajaran SD", ["Pendidikan Agama", "Pendidikan Pancasila", "Bahasa Indonesia", "Matematika", "IPAS", "Seni", "PJOK", "Bahasa Inggris"])
-        mapel = st.selectbox("Mata Pelajaran", [
-            "Pendidikan Agama", "Pendidikan Pancasila", "Bahasa Indonesia", 
-            "Matematika", "IPAS", "Seni Musik", "Seni Rupa", "Seni Teater", 
-            "Seni Tari", "PJOK", "Bahasa Inggris", "Muatan Lokal"
-        ])
+        mapel = st.selectbox("Mata Pelajaran", ["Pendidikan Agama", "Pendidikan Pancasila", "Bahasa Indonesia", "Matematika", "IPAS", "Seni Musik", "PJOK", "Bahasa Inggris"])
 
-    st.subheader("📖 Detail Pembelajaran")
     fase = st.text_input("Fase/Kelas/Semester", value="Fase B / Kelas 4 / Ganjil")
-    jml_pertemuan = st.number_input("Jumlah Pertemuan (1-15)", min_value=1, max_value=15, value=1)
-    jml_pertemuan = st.number_input("Jumlah Pertemuan (Maksimal 15)", min_value=1, max_value=15, value=1)
+    jml_pertemuan = st.number_input("Jumlah Pertemuan", 1, 15, 1)
 
-    # Form Dinamis Tiap Pertemuan
-    st.info("Atur detail Model, Waktu, dan Tanggal untuk tiap pertemuan:")
     data_pertemuan = []
-    list_model = ["PBL", "PjBL", "Discovery Learning", "Inquiry", "STAD", "Demonstrasi", "Mind Mapping"]
-    list_model = [
-        "PBL (Problem Based Learning)", "PjBL (Project Based Learning)", 
-        "Discovery Learning", "Inquiry Learning", "Contextual Learning", 
-        "STAD", "Demonstrasi", "Mind Mapping", "Role Playing", 
-        "Think Pair Share", "Problem Solving", "Blended Learning", 
-        "Flipped Classroom", "Project Citizen", "Ceramah Plus"
-    ]
-
     for i in range(int(jml_pertemuan)):
-        with st.expander(f"📍 Pertemuan Ke-{i+1}", expanded=(i==0)):
-        with st.expander(f"📍 Konfigurasi Pertemuan Ke-{i+1}", expanded=(i==0)):
-            c1, c2, c3 = st.columns([2,1,1])
-            with c1:
-                m = st.selectbox(f"Model P{i+1}", list_model, key=f"m_{i}")
-            with c2:
-                w = st.text_input(f"Waktu P{i+1}", value="2x35 Menit", key=f"w_{i}")
-            with c3:
-                t = st.text_input(f"Tanggal P{i+1}", key=f"t_{i}")
-                t = st.text_input(f"Tanggal P{i+1}", placeholder="DD-MM-YYYY", key=f"t_{i}")
+        with st.expander(f"📍 Konfigurasi Pertemuan Ke-{i+1}"):
+            ca, cb, cc = st.columns([2,1,1])
+            with ca: m = st.selectbox(f"Model P{i+1}", ["PBL", "PjBL", "Discovery", "Inquiry", "STAD"], key=f"m_{i}")
+            with cb: w = st.text_input(f"Waktu P{i+1}", "2x35 Menit", key=f"w_{i}")
+            with cc: t = st.text_input(f"Tanggal P{i+1}", placeholder="DD-MM-YYYY", key=f"t_{i}")
             data_pertemuan.append({"no": i+1, "model": m, "waktu": w, "tgl": t})
+
+    tujuan_umum = st.text_area("Tujuan Pembelajaran")
+    materi_pokok = st.text_area("Detail Materi Pokok (CP/ATP)")
     
-    tujuan = st.text_area("Tujuan Pembelajaran Umum")
-    materi = st.text_area("Detail Materi Pokok")
-    submitted = st.form_submit_button("🚀 GENERATE RPP")
-
-if submitted:
-    if not nama_sekolah or not materi:
-        st.warning("Mohon isi Nama Sekolah dan Materi!")
-    tujuan_umum = st.text_area("Tujuan Pembelajaran Umum")
-    materi_pokok = st.text_area("Detail Materi Pokok (KD/CP)")
-
     btn_generate = st.form_submit_button("🚀 GENERATE RPP SEKARANG")
 
-# --- PROSES GENERATE OLEH AI ---
+# ==============================
+# 5. LOGIKA GENERATE (FALLBACK)
+# ==============================
 if btn_generate:
     if not nama_sekolah or not materi_pokok:
-        st.warning("Mohon lengkapi Nama Sekolah dan Detail Materi!")
+        st.warning("⚠️ Nama Sekolah dan Materi tidak boleh kosong!")
     else:
-        # Daftar model yang akan dicoba (Fallback)
-        model_names = ['gemini-2.0-flash-001', 'gemini-1.5-flash-latest']
-        # Daftar model Fallback (Mencoba 2.0 Flash, jika limit coba 2.0 Flash Lite)
-        model_options = ['gemini-2.0-flash-001', 'gemini-2.0-flash-lite-001']
-        success = False
+        # DAFTAR MODEL YANG AKAN DICOBA SECARA BERURUTAN
+        model_options = [
+            'gemini-2.0-flash-001', 
+            'gemini-2.5-flash', 
+            'gemini-1.5-flash-latest'
+        ]
         
-        for m_name in model_names:
+        success = False
+        jadwal_detail = "\n".join([f"- P{p['no']}: {p['model']}, {p['waktu']}, Tgl: {p['tgl']}" for p in data_pertemuan])
+        
+        prompt = f"""
+        Buatlah Rencana Pelaksanaan Pembelajaran (RPP) Kurikulum Merdeka dalam format HTML.
+        Gunakan data:
+        Sekolah: {nama_sekolah} | Kepsek: {nama_kepsek} ({nip_kepsek}) | Guru: {nama_guru} ({nip_guru})
+        Mapel: {mapel} | Fase: {fase} | Materi: {materi_pokok} | Tujuan: {tujuan_umum}
+        Jadwal: {jadwal_detail}
+        
+        STRUKTUR HTML:
+        1. Judul: <h1>RENCANA PELAKSANAAN PEMBELAJARAN</h1>
+        2. Identitas: Gunakan <table class="no-border">
+        3. Langkah: Gunakan <table class="border"> dengan kolom No, Tahap, Kegiatan (Pendahuluan, Inti, Penutup), Waktu.
+        4. Tanda Tangan: Di akhir gunakan <table class="no-border"> untuk Kepsek dan Guru.
+        
+        PENTING: Hanya berikan tag HTML, jangan berikan kata-kata pembuka atau markdown ```html.
+        """
 
         for model_name in model_options:
             try:
-                with st.spinner(f"Mencoba menyusun dengan {m_name}..."):
-                    active_model = genai.GenerativeModel(m_name)
-                with st.spinner(f"Sedang menyusun RPP menggunakan {model_name}..."):
-                    current_model = genai.GenerativeModel(model_name)
-
-                    jadwal_str = ""
-                    # Menyusun rincian jadwal untuk prompt
-                    jadwal_detail = ""
-                    for p in data_pertemuan:
-                        jadwal_str += f"- Pertemuan {p['no']}: Model {p['model']}, Waktu {p['waktu']}, Tanggal {p['tgl']}\n"
-                        jadwal_detail += f"- Pertemuan {p['no']}: Model {p['model']}, Alokasi Waktu {p['waktu']}, Tanggal {p['tgl']}\n"
-
-                    prompt = f"Buat RPP SD: {nama_sekolah}, Mapel: {mapel}, Kelas: {fase}. Jadwal: {jadwal_str}. Materi: {materi}. Tujuan: {tujuan}. Jabarkan langkah pembelajaran detail per pertemuan."
-                    prompt = f"""
-                    Buatlah Rencana Pelaksanaan Pembelajaran (RPP) profesional dengan data:
-                    Nama Sekolah: {nama_sekolah}
-                    Kepala Sekolah: {nama_kepsek} (NIP: {nip_kepsek})
-                    Guru: {nama_guru} (NIP: {nip_guru})
-                    Mapel: {mapel} | Kelas: {fase}
+                with st.spinner(f"Menghubungi Jalur {model_name}..."):
+                    model = genai.GenerativeModel(model_name)
+                    response = model.generate_content(prompt)
                     
-                    response = active_model.generate_content(prompt)
-                    RINCIAN PERTEMUAN ({jml_pertemuan} kali):
-                    {jadwal_detail}
-                    
-                    st.session_state.usage_count += 1
-                    st.success(f"✅ BERHASIL! (Model: {m_name})")
-                    st.markdown(response.text)
-                    Tujuan Umum: {tujuan_umum}
-                    Materi Pokok: {materi_pokok}
-
-                    SYARAT PENULISAN:
-                    1. Jabarkan Tujuan Khusus dan Langkah Pembelajaran (Pendahuluan, Inti, Penutup) secara spesifik untuk TIAP pertemuan.
-                    2. Langkah INTI harus sesuai dengan Model Pembelajaran yang dipilih pada pertemuan tersebut.
-                    3. Berikan bagian Instrumen Penilaian di akhir.
-                    4. Gunakan format yang rapi dan bahasa Indonesia formal.
-                    """
-
-                    response = current_model.generate_content(prompt)
-
-                    pdf_bytes = create_pdf(response.text)
-                    st.download_button("📥 DOWNLOAD PDF", data=pdf_bytes, file_name=f"RPP_{mapel}.pdf")
-                    success = True
-                    break # Berhenti jika sudah sukses
                     if response.text:
                         st.session_state.usage_count += 1
-                        st.success(f"✅ RPP Berhasil Dibuat! (Sisa Kuota Gratis: {MAX_FREE_TRIAL - st.session_state.usage_count})")
-                        st.markdown("---")
-                        st.markdown(response.text)
-                        
-                        # Tombol Download PDF
-                        pdf_bytes = create_pdf(response.text)
-                        st.download_button(
-                            label="📥 DOWNLOAD SEBAGAI PDF",
-                            data=pdf_bytes,
-                            file_name=f"RPP_{mapel}_{nama_sekolah}.pdf",
-                            mime="application/pdf"
-                        )
+                        st.session_state.hasil_rpp = response.text
                         success = True
-                        break # Keluar dari loop jika berhasil
-            
-            except Exception as e:
-                if "429" in str(e):
-                    st.warning(f"Model {m_name} sedang limit. Mencoba cadangan...")
-                    st.warning(f"Jalur {model_name} sedang penuh. Mencoba jalur cadangan...")
-                    continue
-                else:
-                    st.error(f"Terjadi Kendala: {e}")
-                    st.error(f"Terjadi kesalahan teknis: {e}")
-                    break
+                        break
+            except Exception:
+                continue
         
-
         if not success:
-            st.error("⚠️ Semua jalur kuota AI sedang penuh. Silakan tunggu 1 menit lalu klik tombol Generate kembali.")
-            st.error("⚠️ Semua jalur kuota AI Google sedang limit.")
-            st.info("Saran: Tunggu sekitar 1 menit agar kuota reset, lalu klik kembali tombol Generate.")
+            st.error("⚠️ Semua jalur AI sedang sibuk. Tunggu 1 menit dan coba lagi.")
 
-# Footer Akhir
-st.markdown("---")
-st.caption(f"© 2026 AI Generator Pro - Andy Kurniawan")
-st.caption(f"© 2026 AI Generator Pro - Andy Kurniawan | Sisa Sesi: {MAX_FREE_TRIAL - st.session_state.usage_count}")
+# ==============================
+# 6. DISPLAY HASIL & PRINT
+# ==============================
+if "hasil_rpp" in st.session_state:
+    st.success(f"✅ RPP Berhasil Disusun! (Sisa Kuota: {MAX_FREE_TRIAL - st.session_state.usage_count})")
+    
+    st.markdown("""
+        <button onclick="window.print()" style="width:100%; padding:15px; background-color:#28a745; color:white; border:none; border-radius:10px; cursor:pointer; font-weight:bold; font-size:16px;">
+            📥 DOWNLOAD / CETAK SEBAGAI PDF
+        </button>
+        <p style='color:gray; font-size:12px; text-align:center;'>Tips: Setelah jendela muncul, pilih 'Save as PDF' pada bagian Destination/Printer.</p>
+    """, unsafe_allow_html=True)
+    
+    # Area Kertas RPP
+    st.markdown(f'<div class="rpp-paper">{st.session_state.hasil_rpp}</div>', unsafe_allow_html=True)
+
+st.markdown(f"<br><p style='text-align: center; color: #555;'>© 2026 AI Generator Pro - Andy Kurniawan</p>", unsafe_allow_html=True)
