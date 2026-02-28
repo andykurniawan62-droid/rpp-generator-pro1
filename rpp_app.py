@@ -86,7 +86,7 @@ with st.form("main_form"):
         nip_guru = st.text_input("NIP Guru")
         mapel = st.selectbox("Mata Pelajaran", ["Pendidikan Agama", "Pendidikan Pancasila", "Bahasa Indonesia", "Matematika", "IPAS", "Seni Musik", "Seni Rupa", "Seni Teater", "Seni Tari", "PJOK", "Bahasa Inggris", "Muatan Lokal"])
 
-    st.subheader("🌟 Dimensi Profil Pelajar Pancasila")
+    st.subheader("🌟 Dimensi Profil Lulusan")
     cp1, cp2 = st.columns(2)
     with cp1:
         p1 = st.checkbox("Keimanan & Ketakwaan Kepada Tuhan YME")
@@ -174,3 +174,4 @@ if "hasil_rpp" in st.session_state:
     st.markdown(f'<div class="rpp-paper">{st.session_state.hasil_rpp}</div>', unsafe_allow_html=True)
 
 st.markdown(f"<br><p style='text-align: center; color: #555;'>© 2026 AI Generator Pro - Andy Kurniawan</p>", unsafe_allow_html=True)
+
