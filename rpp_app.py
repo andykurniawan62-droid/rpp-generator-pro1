@@ -90,20 +90,20 @@ with st.form("main_form"):
     with c2:
         nama_guru = st.text_input("Nama Guru")
         nip_guru = st.text_input("NIP Guru")
-        mapel = st.selectbox("Mata Pelajaran", ["Pendidikan Agama", "Pendidikan Pancasila", "Bahasa Indonesia", "Matematika", "IPAS", "Seni Musik", "PJOK", "Bahasa Inggris"])
+        mapel = st.selectbox("Mata Pelajaran", ["Pendidikan Agama", "Pendidikan Pancasila", "Bahasa Indonesia", "Matematika", "IPAS", "Seni Musik", "Seni Rupa", "Seni Teater", "Seni Tari", "PJOK", "Bahasa Inggris", "Muatan Lokal"])
 
-    st.subheader("🌟 Dimensi Profil Lulusan")
+    st.subheader("🌟 Dimensi Profil Pelajar Pancasila")
     cp1, cp2 = st.columns(2)
     with cp1:
-        p1 = st.checkbox("Beriman, Bertakwa Kepada Tuhan YME")
+        p1 = st.checkbox("Keimanan dan Ketakwaan Kepada Tuhan Yang Maha Esa")
         p2 = st.checkbox("Kewargaan (Berkebinekaan Global)")
         p3 = st.checkbox("Penalaran Kritis")
         p4 = st.checkbox("Kreativitas")
     with cp2:
-        p5 = st.checkbox("Gotong Royong (Kolaborasi)")
+        p5 = st.checkbox("Kolaborasi (Gotong Royong)")
         p6 = st.checkbox("Kemandirian")
-        p7 = st.checkbox("Kesehatan (Jasmani/Rohani)")
-        p8 = st.checkbox("Komunikasi (Sosial)")
+        p7 = st.checkbox("Kesehatan")
+        p8 = st.checkbox("Komunikasi")
 
     profil_list = [k for k, v in {
         "Beriman & Bertakwa YME": p1, "Berkebinekaan Global": p2, 
@@ -115,11 +115,20 @@ with st.form("main_form"):
     fase = st.text_input("Fase/Kelas/Semester", value="Fase B / Kelas 4 / Ganjil")
     jml_pertemuan = st.number_input("Jumlah Pertemuan", 1, 15, 1)
 
+    # DAFTAR 15 MODEL PEMBELAJARAN
+    list_model = [
+        "PBL (Problem Based Learning)", "PjBL (Project Based Learning)", 
+        "Discovery Learning", "Inquiry Learning", "Contextual Learning", 
+        "STAD", "Demonstrasi", "Mind Mapping", "Role Playing", 
+        "Think Pair Share", "Problem Solving", "Blended Learning", 
+        "Flipped Classroom", "Project Citizen", "Ceramah Plus"
+    ]
+
     data_pertemuan = []
     for i in range(int(jml_pertemuan)):
-        with st.expander(f"📍 Konfigurasi Pertemuan Ke-{i+1}"):
+        with st.expander(f"📍 Konfigurasi Pertemuan Ke-{i+1}", expanded=(i==0)):
             ca, cb, cc = st.columns([2,1,1])
-            with ca: m = st.selectbox(f"Model P{i+1}", ["PBL", "PjBL", "Discovery", "Inquiry", "STAD"], key=f"m_{i}")
+            with ca: m = st.selectbox(f"Model P{i+1}", list_model, key=f"m_{i}")
             with cb: w = st.text_input(f"Waktu P{i+1}", "2x35 Menit", key=f"w_{i}")
             with cc: t = st.text_input(f"Tanggal P{i+1}", placeholder="DD-MM-YYYY", key=f"t_{i}")
             data_pertemuan.append({"no": i+1, "model": m, "waktu": w, "tgl": t})
@@ -136,26 +145,26 @@ if btn_generate:
     if not nama_sekolah or not materi_pokok:
         st.warning("⚠️ Nama Sekolah dan Materi tidak boleh kosong!")
     else:
-        model_options = ['gemini-2.0-flash-001', 'gemini-2.5-flash', 'gemini-1.5-flash-latest']
+        model_options = ['gemini-2.0-flash-001', 'gemini-1.5-flash-latest']
         success = False
-        jadwal_detail = "\n".join([f"- P{p['no']}: {p['model']}, {p['waktu']}, Tgl: {p['tgl']}" for p in data_pertemuan])
+        jadwal_detail = "\n".join([f"- P{p['no']}: Model {p['model']}, Waktu {p['waktu']}, Tgl {p['tgl']}" for p in data_pertemuan])
         profil_str = ", ".join(profil_list) if profil_list else "Umum"
         
         prompt = f"""
         Buatlah RPP Kurikulum Merdeka dalam format HTML murni.
         Sekolah: {nama_sekolah} | Guru: {nama_guru} | Kepsek: {nama_kepsek}
         Mapel: {mapel} | Fase: {fase} | Materi: {materi_pokok}
-        Dimensi Profil: {profil_str}
-        Jadwal: {jadwal_detail}
+        Dimensi Profil Pelajar Pancasila: {profil_str}
+        Jadwal Pertemuan: {jadwal_detail}
         
         SYARAT HTML:
         1. Judul: <h1>RENCANA PELAKSANAAN PEMBELAJARAN</h1>
         2. Identitas: Gunakan <table class="no-border">
-        3. Langkah: Gunakan <table class="border"> (No, Tahap, Kegiatan, Waktu).
-        4. Tanda Tangan: Gunakan format tabel 2 kolom (Kepsek di kiri, Guru di kanan).
-           Gunakan class="name-line" untuk Nama dan class="nip-line" untuk NIP agar rapat.
+        3. Langkah: Gunakan <table class="border"> (No, Tahap, Kegiatan, Waktu). Langkah inti harus sesuai dengan model pembelajaran per pertemuan.
+        4. Tanda Tangan: Gunakan tabel 2 kolom.
+           Gunakan class="name-line" untuk Nama dan class="nip-line" untuk NIP agar sangat rapat (tanpa celah).
         
-        Berikan Tag HTML saja tanpa kata pembuka.
+        Hanya tag HTML, jangan berikan markdown ```html.
         """
 
         for model_name in model_options:
@@ -177,9 +186,8 @@ if btn_generate:
 # 6. DISPLAY HASIL & PRINT
 # ==============================
 if "hasil_rpp" in st.session_state:
-    st.success(f"✅ RPP Selesai! (Sisa Kuota: {MAX_FREE_TRIAL - st.session_state.usage_count})")
+    st.success(f"✅ RPP Selesai Disusun! (Sisa Kuota: {MAX_FREE_TRIAL - st.session_state.usage_count})")
     st.markdown("""<button onclick="window.print()" style="width:100%; padding:15px; background-color:#28a745; color:white; border:none; border-radius:10px; cursor:pointer; font-weight:bold; font-size:16px;">📥 DOWNLOAD / CETAK SEBAGAI PDF</button>""", unsafe_allow_html=True)
     st.markdown(f'<div class="rpp-paper">{st.session_state.hasil_rpp}</div>', unsafe_allow_html=True)
 
 st.markdown(f"<br><p style='text-align: center; color: #555;'>© 2026 AI Generator Pro - Andy Kurniawan</p>", unsafe_allow_html=True)
-
