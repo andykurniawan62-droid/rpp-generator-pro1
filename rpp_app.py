@@ -32,7 +32,7 @@ st.markdown("""
     .nip-line { margin-top: -5px; padding-top: 0px; font-size: 10pt; }
 
     @media print {
-        .stButton, .stForm, .stMarkdown:not(.rpp-paper), .stSidebar, header, footer, .main-header, [data-testid="stHeader"] {
+        .stButton, .stForm, .stMarkdown:not(.rpp-paper), header, footer, .main-header, [data-testid="stHeader"] {
             display: none !important;
         }
         .stApp { background-color: white !important; }
@@ -45,24 +45,14 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ==============================
-# 2. SISTEM KEAMANAN & INPUT API KEY
+# 2. SISTEM KEAMANAN & API
 # ==============================
-# Sidebar untuk Input API Key Cadangan
-with st.sidebar:
-    st.header("🔑 Pengaturan API")
-    user_api_key = st.text_input("Ganti/Input API Key Cadangan", type="password", help="Masukkan API Key jika jalur utama limit atau error 429.")
-    st.divider()
-    st.info("Sistem akan mencoba menggunakan Key di atas dulu. Jika kosong, baru menggunakan Key sistem (Secrets).")
-
-# Prioritas: 1. Input User, 2. Secrets
-FINAL_API_KEY = user_api_key if user_api_key else st.secrets.get("GEMINI_API_KEY", "")
-
-if not FINAL_API_KEY:
-    st.error("⚠️ API Key tidak ditemukan! Silakan masukkan API Key di Sidebar untuk memulai.")
+GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
+if not GEMINI_API_KEY:
+    st.error("⚠️ API Key tidak ditemukan di Secrets!")
     st.stop()
 
-genai.configure(api_key=FINAL_API_KEY)
-
+genai.configure(api_key=GEMINI_API_KEY)
 if 'usage_count' not in st.session_state:
     st.session_state.usage_count = 0
 MAX_FREE_TRIAL = 5
@@ -96,7 +86,7 @@ with st.form("main_form"):
         nip_guru = st.text_input("NIP Guru")
         mapel = st.selectbox("Mata Pelajaran", ["Pendidikan Agama", "Pendidikan Pancasila", "Bahasa Indonesia", "Matematika", "IPAS", "Seni Musik", "Seni Rupa", "Seni Teater", "Seni Tari", "PJOK", "Bahasa Inggris", "Muatan Lokal"])
 
-    st.subheader("🌟 Dimensi Profil Lulusan")
+    st.subheader("🌟 Dimensi Profil Pelajar Pancasila")
     cp1, cp2 = st.columns(2)
     with cp1:
         p1 = st.checkbox("Keimanan & Ketakwaan Kepada Tuhan YME")
@@ -137,16 +127,13 @@ with st.form("main_form"):
     btn_generate = st.form_submit_button("🚀 GENERATE RPP SEKARANG")
 
 # ==============================
-# 5. LOGIKA GENERATE (HOLISTIK & AUTO-FALLBACK)
+# 5. LOGIKA GENERATE (HOLISTIK)
 # ==============================
 if btn_generate:
     if not nama_sekolah or not materi_pokok:
         st.warning("⚠️ Mohon lengkapi Data Sekolah dan Materi!")
     else:
-        # Daftar urutan model estafet
-        model_variants = ['gemini-2.0-flash-001', 'gemini-2.5-flash', 'gemini-1.5-flash']
-        
-        profil_str = ", ".join([k for k, v in {"Beriman":p1, "Kewargaan":p2, "Bernalar Kritis":p3, "Kreatif":p4, "Gotong Royong":p5, "Mandiri":p6, "Kesehatan":p7, "Komunikasi":p8}.items() if v])
+        profil_str = ", ".join([k for k, v in {"Beriman":p1, "Kewargaan":p2, "Bernalar Kritis":p3, "Kreatif":p4, "Kolaborasi":p5, "Mandiri":p6, "Kesehatan":p7, "Komunikasi":p8}.items() if v])
         jadwal_detail = "\n".join([f"- P{p['no']}: Model {p['model']}, Waktu {p['waktu']}, Tgl {p['tgl']}" for p in data_pertemuan])
         
         prompt = f"""
@@ -169,27 +156,14 @@ if btn_generate:
         Hanya berikan tag HTML tanpa markdown atau pembukaan.
         """
 
-        success = False
-        for m_name in model_variants:
-            try:
-                with st.spinner(f"Sedang menyusun RPP dengan jalur {m_name}..."):
-                    model = genai.GenerativeModel(m_name)
-                    response = model.generate_content(prompt)
-                    if response.text:
-                        st.session_state.usage_count += 1
-                        st.session_state.hasil_rpp = response.text.replace("```html", "").replace("```", "").strip()
-                        success = True
-                        break
-            except Exception as e:
-                if "429" in str(e):
-                    st.warning(f"Jalur {m_name} limit, mencoba jalur berikutnya...")
-                    continue
-                else:
-                    st.error(f"Kendala pada jalur {m_name}: {e}")
-                    continue
-
-        if not success:
-            st.error("⚠️ Semua jalur API penuh/limit. Masukkan API Key baru di Sidebar!")
+        try:
+            with st.spinner("Sedang menyusun RPP yang Holistik & Bermakna..."):
+                model = genai.GenerativeModel('gemini-2.0-flash-001')
+                response = model.generate_content(prompt)
+                st.session_state.usage_count += 1
+                st.session_state.hasil_rpp = response.text.replace("```html", "").replace("```", "").strip()
+        except Exception as e:
+            st.error(f"Terjadi kendala teknis: {e}")
 
 # ==============================
 # 6. DISPLAY HASIL
